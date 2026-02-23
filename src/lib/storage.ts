@@ -38,6 +38,14 @@ export type Product = {
   purchaseDate: string;
   type: string;
   ph: number | null;
+  // PRO fields
+  pricePaid: number | null;
+  paymentMethod: 'pix' | 'debito' | 'credito' | 'dinheiro' | 'boleto' | '';
+  volumeLiters: number | null;
+  // Future expansion (PRO)
+  consumptionPerService: number | null;
+  costPerService: number | null;
+  profitMargin: number | null;
 };
 
 export type QuoteServiceItem = {
