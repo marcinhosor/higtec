@@ -1,10 +1,11 @@
 import { useNavigate } from "react-router-dom";
-import { Users, Calendar, Calculator, Package, FileText, Settings } from "lucide-react";
+import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt } from "lucide-react";
 import logo from "@/assets/logo_app.png";
 
 const menuItems = [
   { path: "/clientes", icon: Users, label: "Clientes", desc: "Gerencie seus clientes" },
   { path: "/agenda", icon: Calendar, label: "Agenda", desc: "Agendamentos e serviços" },
+  { path: "/orcamentos", icon: Receipt, label: "Orçamentos", desc: "Crie orçamentos e propostas" },
   { path: "/calculadora", icon: Calculator, label: "Calculadora de Diluição", desc: "Calcule dosagens" },
   { path: "/produtos", icon: Package, label: "Produtos", desc: "Cadastro de produtos" },
   { path: "/relatorios", icon: FileText, label: "Relatórios", desc: "Gerar relatórios PDF" },

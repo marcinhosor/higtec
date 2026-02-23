@@ -1,11 +1,11 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { Home, Users, Calendar, Calculator, Package, Settings } from "lucide-react";
+import { Home, Users, Calendar, Receipt, Package, Settings } from "lucide-react";
 
 const navItems = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/clientes", icon: Users, label: "Clientes" },
   { path: "/agenda", icon: Calendar, label: "Agenda" },
-  { path: "/calculadora", icon: Calculator, label: "Cálculo" },
+  { path: "/orcamentos", icon: Receipt, label: "Orçam." },
   { path: "/produtos", icon: Package, label: "Produtos" },
   { path: "/configuracoes", icon: Settings, label: "Config" },
 ];
