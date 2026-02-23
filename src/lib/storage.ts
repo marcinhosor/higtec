@@ -40,11 +40,44 @@ export type Product = {
   ph: number | null;
 };
 
+export type QuoteServiceItem = {
+  id: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+export type Quote = {
+  id: string;
+  number: number;
+  date: string;
+  clientId: string;
+  clientName: string;
+  services: QuoteServiceItem[];
+  executionDeadline: string;
+  paymentMethod: 'pix' | 'cartao' | 'dinheiro' | 'parcelado';
+  observations: string;
+  validityDays: number;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  status: 'pendente' | 'aprovado' | 'recusado';
+  createdAt: string;
+};
+
 export type CompanyInfo = {
   name: string;
   phone: string;
   cnpj: string;
   logo: string;
+  address: string;
+  instagram: string;
+  signature: string;
+  isPro: boolean;
+  companyDescription: string;
+  differentials: string;
+  serviceGuarantee: string;
+  executionMethod: string;
+  technicalRecommendation: string;
 };
 
 const KEYS = {
@@ -52,6 +85,8 @@ const KEYS = {
   appointments: 'hig_appointments',
   products: 'hig_products',
   company: 'hig_company',
+  quotes: 'hig_quotes',
+  quoteCounter: 'hig_quote_counter',
 };
 
 function get<T>(key: string, fallback: T): T {
@@ -77,7 +112,20 @@ export const db = {
   getProducts: (): Product[] => get(KEYS.products, []),
   saveProducts: (p: Product[]) => set(KEYS.products, p),
 
-  getCompany: (): CompanyInfo => get(KEYS.company, { name: 'Hig Clean Tec', phone: '', cnpj: '', logo: '' }),
+  getQuotes: (): Quote[] => get(KEYS.quotes, []),
+  saveQuotes: (q: Quote[]) => set(KEYS.quotes, q),
+
+  nextQuoteNumber: (): number => {
+    const current = get(KEYS.quoteCounter, 0);
+    const next = current + 1;
+    set(KEYS.quoteCounter, next);
+    return next;
+  },
+
+  getCompany: (): CompanyInfo => get(KEYS.company, {
+    name: 'Hig Clean Tec', phone: '', cnpj: '', logo: '', address: '', instagram: '', signature: '',
+    isPro: false, companyDescription: '', differentials: '', serviceGuarantee: '', executionMethod: '', technicalRecommendation: ''
+  }),
   saveCompany: (c: CompanyInfo) => set(KEYS.company, c),
 
   exportAll: () => {
@@ -85,6 +133,7 @@ export const db = {
       clients: db.getClients(),
       appointments: db.getAppointments(),
       products: db.getProducts(),
+      quotes: db.getQuotes(),
       company: db.getCompany(),
     });
   },
@@ -94,6 +143,7 @@ export const db = {
     if (data.clients) db.saveClients(data.clients);
     if (data.appointments) db.saveAppointments(data.appointments);
     if (data.products) db.saveProducts(data.products);
+    if (data.quotes) db.saveQuotes(data.quotes);
     if (data.company) db.saveCompany(data.company);
   },
 };

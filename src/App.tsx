@@ -11,6 +11,7 @@ import CalculatorPage from "./pages/CalculatorPage";
 import ProductsPage from "./pages/ProductsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
+import QuotesPage from "./pages/QuotesPage";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/clientes" element={<ClientsPage />} />
           <Route path="/agenda" element={<AgendaPage />} />
+          <Route path="/orcamentos" element={<QuotesPage />} />
           <Route path="/calculadora" element={<CalculatorPage />} />
           <Route path="/produtos" element={<ProductsPage />} />
           <Route path="/relatorios" element={<ReportsPage />} />
