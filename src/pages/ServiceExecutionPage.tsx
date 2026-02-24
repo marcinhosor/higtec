@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import PageShell from "@/components/PageShell";
 import {
-  db, generateId, Product, deductStock,
+  db, generateId, Product, deductStock, Collaborator,
   ServiceExecution, ExecutionPhoto, NonConformity, ExecutionProduct,
 } from "@/lib/storage";
 import { generateExecutionReportPDF } from "@/lib/pdf-quote";
@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Camera, AlertTriangle, FlaskConical, Package, FileText,
   Play, Square, Clock, Trash2, Plus, ChevronDown, ChevronUp, CheckCircle2,
+  Share2, User,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,6 +52,8 @@ export default function ServiceExecutionPage() {
   const appointmentId = searchParams.get("appt") || "";
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [selectedTechnician, setSelectedTechnician] = useState("");
   const isPro = useMemo(() => db.getCompany().isPro, []);
   const company = useMemo(() => db.getCompany(), []);
 
@@ -68,6 +71,8 @@ export default function ServiceExecutionPage() {
 
   useEffect(() => {
     setProducts(db.getProducts());
+    setCollaborators(db.getCollaborators().filter(c => c.status === 'ativo'));
+    if (appointment?.technicianName) setSelectedTechnician(appointment.technicianName);
     const existing = db.getExecutions().find(e => e.appointmentId === appointmentId);
     if (existing) {
       setExecution(existing);
@@ -82,8 +87,9 @@ export default function ServiceExecutionPage() {
       setProcessDesc(existing.processDescription);
       setStartTime(existing.startTime);
       setEndTime(existing.endTime);
+      if (existing.technicianName) setSelectedTechnician(existing.technicianName);
     }
-  }, [appointmentId]);
+  }, [appointmentId, appointment]);
 
   // State
   const [activeSection, setActiveSection] = useState<string>("before");
@@ -246,8 +252,8 @@ export default function ServiceExecutionPage() {
       clientId: appointment.clientId,
       clientName: appointment.clientName,
       serviceType: appointment.serviceType,
-      technicianId: appointment.technicianId,
-      technicianName: appointment.technicianName,
+      technicianId: collaborators.find(c => c.name === selectedTechnician)?.id || appointment.technicianId,
+      technicianName: selectedTechnician || appointment.technicianName,
       fiberType,
       soilingLevel,
       soilingType,
@@ -313,14 +319,11 @@ export default function ServiceExecutionPage() {
     toast.success("Progresso salvo!");
   };
 
-  // Generate execution report PDF with photos
-  const generateExecutionReport = () => {
-    if (!execution && !endTime) {
-      toast.error("Finalize o serviço antes de gerar o relatório");
-      return;
-    }
-    generateExecutionReportPDF({
-      appointment,
+  // Generate execution report PDF — returns jsPDF doc
+  const generateExecutionReport = (andShare = false) => {
+    // Allow generating even if not finalized, save current state first
+    const doc = generateExecutionReportPDF({
+      appointment: { ...appointment, technicianName: selectedTechnician || appointment.technicianName },
       client,
       photosBefore,
       photosAfter,
@@ -337,6 +340,36 @@ export default function ServiceExecutionPage() {
       startTime,
       endTime,
     });
+
+    const fileName = `relatorio-execucao-${appointment.clientName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.pdf`;
+
+    if (andShare) {
+      const blob = doc.output('blob');
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+
+      // Try Web Share API first
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        navigator.share({ files: [file], title: `Relatório - ${appointment.clientName}`, text: `Relatório de execução do serviço de ${appointment.serviceType}` })
+          .then(() => toast.success("Relatório compartilhado!"))
+          .catch(() => {});
+        return;
+      }
+
+      // Fallback: open WhatsApp with download
+      doc.save(fileName);
+      const clientPhone = client?.phone?.replace(/\D/g, '') || '';
+      const whatsappNumber = clientPhone.startsWith('55') ? clientPhone : `55${clientPhone}`;
+      const text = encodeURIComponent(`Olá ${appointment.clientName}! Segue o relatório do serviço de ${appointment.serviceType} realizado. O PDF foi salvo no seu dispositivo.`);
+      if (clientPhone) {
+        window.open(`https://wa.me/${whatsappNumber}?text=${text}`, '_blank');
+      } else {
+        window.open(`https://wa.me/?text=${text}`, '_blank');
+      }
+      return;
+    }
+
+    doc.save(fileName);
+    toast.success("Relatório gerado!");
   };
 
   return (
@@ -346,10 +379,32 @@ export default function ServiceExecutionPage() {
         <div className="rounded-xl bg-card p-4 shadow-card border-l-4 border-l-primary">
           <h3 className="font-semibold text-foreground">{appointment.clientName}</h3>
           <p className="text-sm text-muted-foreground">{appointment.serviceType} • {new Date(appointment.date + "T00:00").toLocaleDateString("pt-BR")} {appointment.time && `às ${appointment.time}`}</p>
-          {appointment.technicianName && <p className="text-xs text-muted-foreground mt-1">👷 {appointment.technicianName}</p>}
           {client && (
             <p className="text-xs text-muted-foreground mt-1">📍 {client.street ? `${client.street}, ${client.number} - ${client.neighborhood}, ${client.city}/${client.state}` : client.address || "Sem endereço"}</p>
           )}
+          {/* Collaborator selector */}
+          <div className="mt-3">
+            <Label className="text-xs flex items-center gap-1"><User className="h-3 w-3" /> Colaborador responsável</Label>
+            {collaborators.length > 0 ? (
+              <Select value={selectedTechnician} onValueChange={setSelectedTechnician}>
+                <SelectTrigger className="mt-1 h-9">
+                  <SelectValue placeholder="Selecione o colaborador" />
+                </SelectTrigger>
+                <SelectContent>
+                  {collaborators.map(c => (
+                    <SelectItem key={c.id} value={c.name}>{c.name} {c.role ? `(${c.role})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={selectedTechnician}
+                onChange={e => setSelectedTechnician(e.target.value)}
+                placeholder="Nome do colaborador"
+                className="mt-1 h-9"
+              />
+            )}
+          </div>
         </div>
 
         {/* Timer */}
@@ -523,21 +578,19 @@ export default function ServiceExecutionPage() {
           <Button className="w-full rounded-full gap-2" variant="outline" onClick={() => saveExecution("em_andamento")}>
             <Package className="h-4 w-4" /> Salvar Progresso
           </Button>
-          {endTime && (
+          <Button className="w-full rounded-full gap-2" onClick={() => saveExecution("finalizado")}>
+            <CheckCircle2 className="h-4 w-4" /> Finalizar Serviço
+            {isPro && totalCost > 0 && <span className="text-xs opacity-80">(baixa estoque automática)</span>}
+          </Button>
+          {(endTime || execution?.status === "finalizado") && (
             <>
-              <Button className="w-full rounded-full gap-2" onClick={() => saveExecution("finalizado")}>
-                <CheckCircle2 className="h-4 w-4" /> Finalizar Serviço
-                {isPro && totalCost > 0 && <span className="text-xs opacity-80">(baixa estoque automática)</span>}
-              </Button>
-              <Button className="w-full rounded-full gap-2" variant="outline" onClick={generateExecutionReport}>
+              <Button className="w-full rounded-full gap-2" variant="outline" onClick={() => generateExecutionReport(false)}>
                 <FileText className="h-4 w-4" /> 📄 Gerar Relatório com Fotos
               </Button>
+              <Button className="w-full rounded-full gap-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => generateExecutionReport(true)}>
+                <Share2 className="h-4 w-4" /> Compartilhar via WhatsApp
+              </Button>
             </>
-          )}
-          {execution?.status === "finalizado" && (
-            <Button className="w-full rounded-full gap-2" variant="outline" onClick={generateExecutionReport}>
-              <FileText className="h-4 w-4" /> 📄 Gerar Relatório com Fotos
-            </Button>
           )}
         </div>
       </div>

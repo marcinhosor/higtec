@@ -668,6 +668,5 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
   doc.text(appointment.technicianName || companyName, 60, y, { align: "center" });
   doc.text(appointment.clientName, 150, y, { align: "center" });
 
-  const fileName = `relatorio-execucao-${appointment.clientName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.pdf`;
-  doc.save(fileName);
+  return doc;
 }
