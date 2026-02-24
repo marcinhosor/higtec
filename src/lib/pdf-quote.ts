@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Quote, CompanyInfo, Client, Collaborator } from "./storage";
+import { Quote, CompanyInfo, Client, Collaborator, Appointment, ExecutionPhoto, NonConformity, ExecutionProduct } from "./storage";
 
 const paymentLabels: Record<string, string> = {
   pix: "Pix",
@@ -453,4 +453,221 @@ export function generateServiceReportPDF(data: ServiceReportData) {
   doc.text(client.name, 150, y - (technician?.role ? 4 : 0), { align: "center" });
 
   doc.save(`relatorio-servico-${client.name.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+}
+
+// =============================================
+// EXECUTION REPORT PDF (with photos & non-conformities)
+// =============================================
+
+type ExecutionReportData = {
+  appointment: Appointment;
+  client: Client | null;
+  photosBefore: ExecutionPhoto[];
+  photosAfter: ExecutionPhoto[];
+  nonConformities: NonConformity[];
+  productsUsed: ExecutionProduct[];
+  observations: string;
+  processDescription: string;
+  fiberType: string;
+  soilingLevel: string;
+  soilingType: string;
+  totalMinutes: number;
+  totalCost: number;
+  company: CompanyInfo;
+  startTime: string;
+  endTime: string;
+};
+
+export function generateExecutionReportPDF(data: ExecutionReportData) {
+  const { appointment, client, photosBefore, photosAfter, nonConformities, productsUsed, observations, processDescription, fiberType, soilingLevel, soilingType, totalMinutes, totalCost, company, startTime, endTime } = data;
+  const doc = new jsPDF();
+  const isPro = company.isPro;
+  const companyName = isPro ? company.name : "Hig Clean Tec";
+
+  if (!isPro) {
+    doc.setFontSize(50);
+    doc.setTextColor(200, 220, 240);
+    doc.text("HIG CLEAN TEC", 105, 150, { align: "center", angle: 45 });
+    doc.setTextColor(0, 0, 0);
+  }
+
+  let y = renderHeader(doc, company, isPro);
+
+  // Title
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(30, 30, 30);
+  doc.text("RELATÓRIO DE EXECUÇÃO", 105, y, { align: "center" });
+  y += 10;
+
+  // Info table
+  const infoRows: string[][] = [
+    ["Cliente", appointment.clientName],
+    ["Serviço", appointment.serviceType],
+    ["Data", new Date(appointment.date + "T00:00").toLocaleDateString("pt-BR")],
+    ["Técnico", appointment.technicianName || "-"],
+  ];
+  if (client) {
+    const addr = client.street ? `${client.street}, ${client.number} - ${client.neighborhood}, ${client.city}/${client.state}` : client.address || "Não informado";
+    infoRows.push(["Endereço", addr]);
+    infoRows.push(["Telefone", client.phone || "-"]);
+  }
+  if (fiberType) infoRows.push(["Tipo de Fibra", fiberType]);
+  if (soilingLevel) infoRows.push(["Nível de Sujidade", soilingLevel]);
+  if (soilingType) infoRows.push(["Tipo de Sujidade", soilingType]);
+  if (totalMinutes > 0) infoRows.push(["Tempo de Execução", `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}min`]);
+  if (startTime) infoRows.push(["Início", new Date(startTime).toLocaleString("pt-BR")]);
+  if (endTime) infoRows.push(["Término", new Date(endTime).toLocaleString("pt-BR")]);
+
+  autoTable(doc, {
+    startY: y,
+    body: infoRows,
+    theme: "plain",
+    styles: { fontSize: 10, cellPadding: 2 },
+    columnStyles: { 0: { fontStyle: "bold", cellWidth: 50, textColor: [100, 100, 100] } },
+    margin: { left: 15, right: 15 },
+  });
+  y = (doc as any).lastAutoTable.finalY + 8;
+
+  const addField = (label: string, value: string) => {
+    if (!value) return;
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(41, 128, 205);
+    doc.setFontSize(11);
+    doc.text(label, 15, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(value, 175);
+    doc.text(lines, 15, y);
+    y += lines.length * 5 + 6;
+  };
+
+  // Process description
+  addField("Processo Realizado", processDescription);
+
+  // Products used
+  if (productsUsed.length > 0) {
+    if (y > 240) { doc.addPage(); y = 20; }
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(41, 128, 205);
+    doc.text("Produtos Utilizados", 15, y);
+    y += 6;
+
+    autoTable(doc, {
+      startY: y,
+      head: [["Produto", "Diluição", "Solução (L)", "Concentrado (ml)"]],
+      body: productsUsed.map(ep => [ep.productName, ep.dilution, String(ep.solutionVolumeLiters), String(ep.concentratedMl)]),
+      theme: "striped",
+      headStyles: { fillColor: [41, 128, 205], textColor: 255 },
+      styles: { fontSize: 9 },
+      margin: { left: 15, right: 15 },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+
+    if (isPro && totalCost > 0) {
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(41, 128, 205);
+      doc.text(`Custo de insumos: R$ ${totalCost.toFixed(2)}`, 15, y);
+      y += 8;
+    }
+  }
+
+  // Observations
+  addField("Observações Finais", observations);
+
+  // Non-conformities
+  if (nonConformities.length > 0) {
+    if (y > 230) { doc.addPage(); y = 20; }
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(200, 50, 50);
+    doc.text("⚠ REGISTRO DE NÃO CONFORMIDADES", 15, y);
+    y += 7;
+
+    autoTable(doc, {
+      startY: y,
+      head: [["Ocorrência", "Grau", "Descrição", "Cliente Ciente"]],
+      body: nonConformities.map(nc => [
+        nc.type,
+        nc.severity.toUpperCase(),
+        nc.description || "-",
+        nc.clientAware ? "Sim" : "Não",
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: [200, 50, 50], textColor: 255 },
+      styles: { fontSize: 9 },
+      margin: { left: 15, right: 15 },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Photos section
+  const addPhotos = (photos: ExecutionPhoto[], label: string) => {
+    if (photos.length === 0) return;
+    doc.addPage();
+    y = 20;
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(41, 128, 205);
+    doc.text(`📷 Fotos - ${label}`, 15, y);
+    y += 10;
+
+    photos.forEach((photo, idx) => {
+      if (y > 200) { doc.addPage(); y = 20; }
+
+      try {
+        // Label badge
+        if (label === "ANTES") { doc.setFillColor(255, 200, 50); }
+        else { doc.setFillColor(50, 200, 100); }
+        doc.roundedRect(15, y - 4, 25, 8, 2, 2, "F");
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 0, 0);
+        doc.text(label, 17, y + 1);
+
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Foto ${idx + 1} - ${new Date(photo.timestamp).toLocaleString("pt-BR")}`, 45, y + 1);
+        y += 8;
+
+        doc.addImage(photo.dataUrl, "JPEG", 15, y, 80, 60);
+        if (photo.description) {
+          doc.setFontSize(9);
+          doc.setTextColor(60, 60, 60);
+          doc.text(photo.description, 100, y + 10);
+        }
+        y += 68;
+      } catch {
+        doc.setFontSize(9);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`[Foto ${idx + 1} não pôde ser carregada]`, 15, y);
+        y += 10;
+      }
+    });
+  };
+
+  addPhotos(photosBefore, "ANTES");
+  addPhotos(photosAfter, "DEPOIS");
+
+  // Footer signature
+  doc.addPage();
+  y = 220;
+  doc.setDrawColor(150, 150, 150);
+  doc.line(30, y, 90, y);
+  doc.line(120, y, 180, y);
+  y += 5;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(appointment.technicianName || companyName, 60, y, { align: "center" });
+  doc.text(appointment.clientName, 150, y, { align: "center" });
+
+  const fileName = `relatorio-execucao-${appointment.clientName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(fileName);
 }

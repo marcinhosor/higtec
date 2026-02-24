@@ -5,6 +5,7 @@ import {
   db, generateId, Product, deductStock,
   ServiceExecution, ExecutionPhoto, NonConformity, ExecutionProduct,
 } from "@/lib/storage";
+import { generateExecutionReportPDF } from "@/lib/pdf-quote";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -279,14 +280,63 @@ export default function ServiceExecutionPage() {
       });
       setUsedProducts([...usedProducts]);
       setProducts(db.getProducts());
+    }
 
-      // Mark appointment as completed
+    // Mark appointment as completed and add to client service history
+    if (status === "finalizado") {
       const appts = db.getAppointments();
       const updated = appts.map(a => a.id === appointmentId ? { ...a, status: "concluido" as const } : a);
       db.saveAppointments(updated);
+
+      // Register in client's service history
+      const clients = db.getClients();
+      const cIdx = clients.findIndex(c => c.id === appointment.clientId);
+      if (cIdx !== -1) {
+        const productNames = usedProducts.map(ep => ep.productName);
+        const serviceRecord = {
+          id: generateId(),
+          date: new Date().toISOString(),
+          serviceType: appointment.serviceType,
+          products: productNames,
+          observations: observations || processDesc.slice(0, 200),
+          clientId: appointment.clientId,
+        };
+        clients[cIdx].serviceHistory = [...(clients[cIdx].serviceHistory || []), serviceRecord];
+        db.saveClients(clients);
+      }
+
+      toast.success("Serviço finalizado e salvo com sucesso!");
+      navigate("/");
+      return;
     }
 
-    toast.success(status === "finalizado" ? "Serviço finalizado e salvo!" : "Progresso salvo!");
+    toast.success("Progresso salvo!");
+  };
+
+  // Generate execution report PDF with photos
+  const generateExecutionReport = () => {
+    if (!execution && !endTime) {
+      toast.error("Finalize o serviço antes de gerar o relatório");
+      return;
+    }
+    generateExecutionReportPDF({
+      appointment,
+      client,
+      photosBefore,
+      photosAfter,
+      nonConformities,
+      productsUsed: usedProducts,
+      observations,
+      processDescription: processDesc,
+      fiberType,
+      soilingLevel,
+      soilingType,
+      totalMinutes: elapsedMinutes,
+      totalCost,
+      company,
+      startTime,
+      endTime,
+    });
   };
 
   return (
@@ -474,9 +524,19 @@ export default function ServiceExecutionPage() {
             <Package className="h-4 w-4" /> Salvar Progresso
           </Button>
           {endTime && (
-            <Button className="w-full rounded-full gap-2" onClick={() => saveExecution("finalizado")}>
-              <CheckCircle2 className="h-4 w-4" /> Finalizar Serviço
-              {isPro && totalCost > 0 && <span className="text-xs opacity-80">(baixa estoque automática)</span>}
+            <>
+              <Button className="w-full rounded-full gap-2" onClick={() => saveExecution("finalizado")}>
+                <CheckCircle2 className="h-4 w-4" /> Finalizar Serviço
+                {isPro && totalCost > 0 && <span className="text-xs opacity-80">(baixa estoque automática)</span>}
+              </Button>
+              <Button className="w-full rounded-full gap-2" variant="outline" onClick={generateExecutionReport}>
+                <FileText className="h-4 w-4" /> 📄 Gerar Relatório com Fotos
+              </Button>
+            </>
+          )}
+          {execution?.status === "finalizado" && (
+            <Button className="w-full rounded-full gap-2" variant="outline" onClick={generateExecutionReport}>
+              <FileText className="h-4 w-4" /> 📄 Gerar Relatório com Fotos
             </Button>
           )}
         </div>
