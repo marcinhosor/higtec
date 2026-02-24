@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Quote, CompanyInfo, Client, Collaborator, Appointment, ExecutionPhoto, NonConformity, ExecutionProduct } from "./storage";
+import { Quote, CompanyInfo, Client, Collaborator, Appointment, ExecutionPhoto, NonConformity, ExecutionProduct, THEME_PALETTES, type ThemePalette } from "./storage";
 
 const paymentLabels: Record<string, string> = {
   pix: "Pix",
@@ -9,35 +9,55 @@ const paymentLabels: Record<string, string> = {
   parcelado: "Parcelado",
 };
 
+function getCompanyTheme(company: CompanyInfo): ThemePalette {
+  const canUse = company.isPro || company.planTier === 'pro' || company.planTier === 'premium';
+  if (!canUse) return THEME_PALETTES[0];
+  return THEME_PALETTES.find(t => t.id === company.selectedThemeId) || THEME_PALETTES[0];
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return [r, g, b];
+}
+
+type TC = [number, number, number];
+
 function renderHeader(doc: jsPDF, company: CompanyInfo, isPro: boolean): number {
   let y = 15;
   const companyName = isPro ? company.name : "Hig Clean Tec";
+  const theme = getCompanyTheme(company);
+  const tc: TC = hexToRgb(theme.primary);
 
+  // PRO/PREMIUM: Company logo centered at top
   if (isPro && company.logo) {
     try {
-      doc.addImage(company.logo, "PNG", 15, y, 25, 25);
-      y += 2;
+      const logoW = 40, logoH = 40;
+      doc.addImage(company.logo, "PNG", (210 - logoW) / 2, y, logoW, logoH);
+      y += logoH + 4;
     } catch { /* logo load failed */ }
   }
 
-  const headerX = isPro && company.logo ? 45 : 15;
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(41, 128, 205);
-  doc.text(companyName, headerX, y + 6);
+  doc.setTextColor(...tc);
+  doc.text(companyName, 105, y, { align: "center" });
+  y += 7;
+
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(100, 100, 100);
-  let subY = y + 13;
-  if (company.phone) { doc.text(`Tel: ${company.phone}`, headerX, subY); subY += 5; }
-  if (isPro && company.cnpj) { doc.text(`CNPJ: ${company.cnpj}`, headerX, subY); subY += 5; }
-  if (isPro && company.address) { doc.text(company.address, headerX, subY); subY += 5; }
-  if (isPro && company.instagram) { doc.text(`@${company.instagram.replace('@', '')}`, headerX, subY); subY += 5; }
+  const subLines: string[] = [];
+  if (company.phone) subLines.push(`Tel: ${company.phone}`);
+  if (isPro && company.cnpj) subLines.push(`CNPJ: ${company.cnpj}`);
+  if (isPro && company.address) subLines.push(company.address);
+  if (isPro && company.instagram) subLines.push(`@${company.instagram.replace('@', '')}`);
+  subLines.forEach(line => { doc.text(line, 105, y, { align: "center" }); y += 4; });
 
-  y = Math.max(subY, y + 30) + 5;
-
-  doc.setDrawColor(41, 128, 205);
-  doc.setLineWidth(0.5);
+  y += 4;
+  doc.setDrawColor(...tc);
+  doc.setLineWidth(0.7);
   doc.line(15, y, 195, y);
   y += 8;
 
@@ -47,24 +67,21 @@ function renderHeader(doc: jsPDF, company: CompanyInfo, isPro: boolean): number 
 function renderPaymentFooter(doc: jsPDF, company: CompanyInfo, y: number): number {
   const isPro = company.isPro;
   if (!isPro) return y;
-
   const hasBankData = company.bankData?.bankName;
   const primaryPix = (company.pixKeys || []).find(k => k.isPrimary);
-
   if (!hasBankData && !primaryPix) return y;
-
   if (y > 240) { doc.addPage(); y = 20; }
+
+  const tc: TC = hexToRgb(getCompanyTheme(company).primary);
 
   doc.setDrawColor(200, 200, 200);
   doc.line(15, y, 195, y);
   y += 8;
-
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(41, 128, 205);
+  doc.setTextColor(...tc);
   doc.text("DADOS PARA PAGAMENTO", 15, y);
   y += 7;
-
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(60, 60, 60);
@@ -82,7 +99,7 @@ function renderPaymentFooter(doc: jsPDF, company: CompanyInfo, y: number): numbe
 
   if (primaryPix) {
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(41, 128, 205);
+    doc.setTextColor(...tc);
     doc.text(`Chave Pix (Principal): ${primaryPix.value}`, 15, y);
     y += 5;
     doc.setFont("helvetica", "normal");
@@ -98,8 +115,8 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
   const doc = new jsPDF();
   const isPro = company.isPro;
   const companyName = isPro ? company.name : "Hig Clean Tec";
+  const tc: TC = hexToRgb(getCompanyTheme(company).primary);
 
-  // Watermark for free version
   if (!isPro) {
     doc.setFontSize(50);
     doc.setTextColor(200, 220, 240);
@@ -109,14 +126,12 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
 
   let y = renderHeader(doc, company, isPro);
 
-  // Title
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(30, 30, 30);
   doc.text(`ORÇAMENTO #${quote.number}`, 105, y, { align: "center" });
   y += 10;
 
-  // Client info
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(60, 60, 60);
@@ -127,26 +142,20 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
   if (quote.executionDeadline) { doc.text(`Prazo: ${quote.executionDeadline}`, 140, y); }
   y += 10;
 
-  // Service table
   const sub = quote.services.reduce((s, sv) => s + sv.quantity * sv.unitPrice, 0);
   autoTable(doc, {
     startY: y,
     head: [["Serviço", "Qtd", "Valor Unit.", "Subtotal"]],
     body: quote.services.map(s => [
-      s.name,
-      String(s.quantity),
-      `R$ ${s.unitPrice.toFixed(2)}`,
-      `R$ ${(s.quantity * s.unitPrice).toFixed(2)}`,
+      s.name, String(s.quantity), `R$ ${s.unitPrice.toFixed(2)}`, `R$ ${(s.quantity * s.unitPrice).toFixed(2)}`,
     ]),
     theme: "striped",
-    headStyles: { fillColor: [41, 128, 205], textColor: 255, fontStyle: "bold" },
+    headStyles: { fillColor: tc, textColor: 255, fontStyle: "bold" },
     styles: { fontSize: 10 },
     margin: { left: 15, right: 15 },
   });
-
   y = (doc as any).lastAutoTable.finalY + 8;
 
-  // Totals
   doc.setFontSize(10);
   doc.text(`Subtotal: R$ ${sub.toFixed(2)}`, 140, y);
   y += 6;
@@ -162,18 +171,16 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
   })();
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(41, 128, 205);
+  doc.setTextColor(...tc);
   doc.text(`TOTAL: R$ ${totalVal.toFixed(2)}`, 140, y);
   y += 10;
 
-  // Payment
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(60, 60, 60);
   doc.text(`Forma de Pagamento: ${paymentLabels[quote.paymentMethod]}`, 15, y);
   y += 8;
 
-  // Observations
   if (quote.observations) {
     doc.text("Observações:", 15, y);
     y += 5;
@@ -182,10 +189,8 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
     y += lines.length * 5 + 5;
   }
 
-  // Payment footer (PRO)
   y = renderPaymentFooter(doc, company, y);
 
-  // Signature
   if (y < 250) y = 250;
   doc.setDrawColor(150, 150, 150);
   doc.line(30, y, 90, y);
@@ -203,6 +208,7 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   const doc = new jsPDF();
   const isPro = company.isPro;
   const companyName = isPro ? company.name : "Hig Clean Tec";
+  const tc: TC = hexToRgb(getCompanyTheme(company).primary);
 
   if (!isPro) {
     doc.setFontSize(50);
@@ -213,7 +219,6 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
 
   let y = renderHeader(doc, company, isPro);
 
-  // Title
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(30, 30, 30);
@@ -227,13 +232,12 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   doc.text(`Data: ${new Date(quote.date + "T00:00").toLocaleDateString("pt-BR")}`, 140, y);
   y += 10;
 
-  // Sections
   const addSection = (title: string, content: string) => {
     if (!content) return;
     if (y > 260) { doc.addPage(); y = 20; }
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(41, 128, 205);
+    doc.setTextColor(...tc);
     doc.text(title, 15, y);
     y += 6;
     doc.setFontSize(10);
@@ -250,11 +254,10 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   addSection("Método de Execução", company.executionMethod || "Utilizamos o método de extração por água quente (HWE), que é o mais eficiente para higienização profunda de estofados.");
   addSection("Recomendação Técnica", company.technicalRecommendation || "Recomendamos a higienização periódica dos estofados para manutenção da saúde e conservação do material.");
 
-  // Services table
   if (y > 220) { doc.addPage(); y = 20; }
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(41, 128, 205);
+  doc.setTextColor(...tc);
   doc.text("Serviços Propostos", 15, y);
   y += 6;
 
@@ -264,7 +267,7 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
     head: [["Serviço", "Qtd", "Valor"]],
     body: quote.services.map(s => [s.name, String(s.quantity), `R$ ${(s.quantity * s.unitPrice).toFixed(2)}`]),
     theme: "striped",
-    headStyles: { fillColor: [41, 128, 205] },
+    headStyles: { fillColor: tc },
     styles: { fontSize: 10 },
     margin: { left: 15, right: 15 },
   });
@@ -274,7 +277,7 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   const tot = Math.max(0, sub - disc);
   doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(41, 128, 205);
+  doc.setTextColor(...tc);
   doc.text(`Investimento Total: R$ ${tot.toFixed(2)}`, 15, y);
   y += 8;
   doc.setFontSize(10);
@@ -285,10 +288,8 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   doc.text(`Validade da proposta: ${quote.validityDays} dias`, 15, y);
   y += 10;
 
-  // Payment footer (PRO)
   y = renderPaymentFooter(doc, company, y);
 
-  // Signature
   if (y < 250) y = 250;
   doc.setDrawColor(150, 150, 150);
   doc.line(30, y, 90, y);
@@ -329,6 +330,7 @@ export function generateServiceReportPDF(data: ServiceReportData) {
   const doc = new jsPDF();
   const isPro = company.isPro;
   const companyName = isPro ? company.name : "Hig Clean Tec";
+  const tc: TC = hexToRgb(getCompanyTheme(company).primary);
 
   if (!isPro) {
     doc.setFontSize(50);
@@ -339,14 +341,12 @@ export function generateServiceReportPDF(data: ServiceReportData) {
 
   let y = renderHeader(doc, company, isPro);
 
-  // Title
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(30, 30, 30);
   doc.text("RELATÓRIO DE SERVIÇO", 105, y, { align: "center" });
   y += 10;
 
-  // Client info table
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(60, 60, 60);
@@ -372,12 +372,11 @@ export function generateServiceReportPDF(data: ServiceReportData) {
   });
   y = (doc as any).lastAutoTable.finalY + 8;
 
-  // Products & dilution
   const addField = (label: string, value: string) => {
     if (!value) return;
     if (y > 260) { doc.addPage(); y = 20; }
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(41, 128, 205);
+    doc.setTextColor(...tc);
     doc.setFontSize(11);
     doc.text(label, 15, y);
     y += 5;
@@ -394,13 +393,12 @@ export function generateServiceReportPDF(data: ServiceReportData) {
   if (form.volumeUsed) addField("Volume Utilizado", form.volumeUsed);
   addField("Observações Técnicas", form.observations);
 
-  // PRO: Technical description
   if (isPro) {
     if (form.diagnosis || form.procedure || form.dilutionJustification || form.postServiceRecommendations) {
       if (y > 220) { doc.addPage(); y = 20; }
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(41, 128, 205);
+      doc.setTextColor(...tc);
       doc.text("DESCRIÇÃO TÉCNICA DO PROCESSO", 15, y);
       y += 8;
 
@@ -411,22 +409,19 @@ export function generateServiceReportPDF(data: ServiceReportData) {
     }
   }
 
-  // Maintenance suggestion
   if (form.serviceType) {
     if (y > 260) { doc.addPage(); y = 20; }
     doc.setFillColor(240, 248, 255);
     doc.roundedRect(15, y - 2, 180, 12, 3, 3, "F");
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(41, 128, 205);
+    doc.setTextColor(...tc);
     doc.text(`Recomendação: nova higienização em ${suggestion}`, 20, y + 6);
     y += 18;
   }
 
-  // Payment footer (PRO)
   y = renderPaymentFooter(doc, company, y);
 
-  // Signature area
   if (y < 240) y = 240;
   if (y > 260) { doc.addPage(); y = 240; }
 
@@ -437,7 +432,6 @@ export function generateServiceReportPDF(data: ServiceReportData) {
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
 
-  // Technician signature
   if (isPro && technician?.signature) {
     try {
       doc.addImage(technician.signature, "PNG", 35, y - 25, 50, 18);
@@ -483,6 +477,7 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
   const doc = new jsPDF();
   const isPro = company.isPro;
   const companyName = isPro ? company.name : "Hig Clean Tec";
+  const tc: TC = hexToRgb(getCompanyTheme(company).primary);
 
   if (!isPro) {
     doc.setFontSize(50);
@@ -493,14 +488,12 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
 
   let y = renderHeader(doc, company, isPro);
 
-  // Title
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(30, 30, 30);
   doc.text("RELATÓRIO DE EXECUÇÃO", 105, y, { align: "center" });
   y += 10;
 
-  // Info table
   const infoRows: string[][] = [
     ["Cliente", appointment.clientName],
     ["Serviço", appointment.serviceType],
@@ -533,7 +526,7 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     if (!value) return;
     if (y > 260) { doc.addPage(); y = 20; }
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(41, 128, 205);
+    doc.setTextColor(...tc);
     doc.setFontSize(11);
     doc.text(label, 15, y);
     y += 5;
@@ -545,15 +538,13 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     y += lines.length * 5 + 6;
   };
 
-  // Process description
   addField("Processo Realizado", processDescription);
 
-  // Products used
   if (productsUsed.length > 0) {
     if (y > 240) { doc.addPage(); y = 20; }
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(41, 128, 205);
+    doc.setTextColor(...tc);
     doc.text("Produtos Utilizados", 15, y);
     y += 6;
 
@@ -562,19 +553,15 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
       head: [["Produto", "Diluição", "Solução (L)", "Concentrado (ml)"]],
       body: productsUsed.map(ep => [ep.productName, ep.dilution, String(ep.solutionVolumeLiters), String(ep.concentratedMl)]),
       theme: "striped",
-      headStyles: { fillColor: [41, 128, 205], textColor: 255 },
+      headStyles: { fillColor: tc, textColor: 255 },
       styles: { fontSize: 9 },
       margin: { left: 15, right: 15 },
     });
     y = (doc as any).lastAutoTable.finalY + 8;
-
-    // Cost info removed from client-facing report
   }
 
-  // Observations
   addField("Observações Finais", observations);
 
-  // Non-conformities
   if (nonConformities.length > 0) {
     if (y > 230) { doc.addPage(); y = 20; }
     doc.setFontSize(12);
@@ -587,10 +574,7 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
       startY: y,
       head: [["Ocorrência", "Grau", "Descrição", "Cliente Ciente"]],
       body: nonConformities.map(nc => [
-        nc.type,
-        nc.severity.toUpperCase(),
-        nc.description || "-",
-        nc.clientAware ? "Sim" : "Não",
+        nc.type, nc.severity.toUpperCase(), nc.description || "-", nc.clientAware ? "Sim" : "Não",
       ]),
       theme: "striped",
       headStyles: { fillColor: [200, 50, 50], textColor: 255 },
@@ -600,7 +584,6 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     y = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  // Photos section
   const addPhotos = (photos: ExecutionPhoto[], label: string) => {
     if (photos.length === 0) return;
     doc.addPage();
@@ -608,15 +591,13 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
 
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(41, 128, 205);
+    doc.setTextColor(...tc);
     doc.text(`📷 Fotos - ${label}`, 15, y);
     y += 10;
 
     photos.forEach((photo, idx) => {
       if (y > 200) { doc.addPage(); y = 20; }
-
       try {
-        // Label badge
         if (label === "ANTES") { doc.setFillColor(255, 200, 50); }
         else { doc.setFillColor(50, 200, 100); }
         doc.roundedRect(15, y - 4, 25, 8, 2, 2, "F");
@@ -650,7 +631,6 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
   addPhotos(photosBefore, "ANTES");
   addPhotos(photosAfter, "DEPOIS");
 
-  // Footer signature
   doc.addPage();
   y = 220;
   doc.setDrawColor(150, 150, 150);

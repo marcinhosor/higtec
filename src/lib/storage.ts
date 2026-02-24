@@ -209,6 +209,25 @@ export type BankData = {
   holderDocument: string;
 };
 
+export type ThemePalette = {
+  id: string;
+  name: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  background: string;
+};
+
+export const THEME_PALETTES: ThemePalette[] = [
+  { id: 'default', name: 'Azul Padrão', primary: '#2980CD', secondary: '#D6E9F8', accent: '#1a5276', background: '#f0f7ff' },
+  { id: 'black-gold', name: 'Premium Black & Gold', primary: '#D4AF37', secondary: '#1a1a1a', accent: '#FFD700', background: '#0d0d0d' },
+  { id: 'corporate-blue', name: 'Azul Corporativo', primary: '#1B3A5C', secondary: '#4A90D9', accent: '#FFFFFF', background: '#E8EFF7' },
+  { id: 'green-pro', name: 'Verde Profissional', primary: '#1B5E20', secondary: '#4CAF50', accent: '#FFFFFF', background: '#E8F5E9' },
+  { id: 'minimal-gray', name: 'Cinza Minimalista', primary: '#37474F', secondary: '#90A4AE', accent: '#FFFFFF', background: '#ECEFF1' },
+];
+
+export type PlanTier = 'free' | 'pro' | 'premium';
+
 export type CompanyInfo = {
   name: string;
   phone: string;
@@ -218,6 +237,8 @@ export type CompanyInfo = {
   instagram: string;
   signature: string;
   isPro: boolean;
+  planTier: PlanTier;
+  selectedThemeId: string;
   companyDescription: string;
   differentials: string;
   serviceGuarantee: string;
@@ -326,12 +347,19 @@ export const db = {
     return next;
   },
 
-  getCompany: (): CompanyInfo => get(KEYS.company, {
-    name: 'Hig Clean Tec', phone: '', cnpj: '', logo: '', address: '', instagram: '', signature: '',
-    isPro: false, companyDescription: '', differentials: '', serviceGuarantee: '', executionMethod: '', technicalRecommendation: '',
-    bankData: { bankName: '', agency: '', account: '', accountType: 'corrente', holderName: '', holderDocument: '' },
-    pixKeys: [],
-  }),
+  getCompany: (): CompanyInfo => {
+    const defaults: CompanyInfo = {
+      name: 'Hig Clean Tec', phone: '', cnpj: '', logo: '', address: '', instagram: '', signature: '',
+      isPro: false, planTier: 'free', selectedThemeId: 'default',
+      companyDescription: '', differentials: '', serviceGuarantee: '', executionMethod: '', technicalRecommendation: '',
+      bankData: { bankName: '', agency: '', account: '', accountType: 'corrente' as const, holderName: '', holderDocument: '' },
+      pixKeys: [],
+    };
+    const c: CompanyInfo = { ...defaults, ...get(KEYS.company, defaults) };
+    if (!c.planTier) c.planTier = c.isPro ? 'pro' : 'free';
+    if (!c.selectedThemeId) c.selectedThemeId = 'default';
+    return c;
+  },
   saveCompany: (c: CompanyInfo) => set(KEYS.company, c),
 
   exportAll: () => {
