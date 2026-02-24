@@ -568,13 +568,7 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     });
     y = (doc as any).lastAutoTable.finalY + 8;
 
-    if (isPro && totalCost > 0) {
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(41, 128, 205);
-      doc.text(`Custo de insumos: R$ ${totalCost.toFixed(2)}`, 15, y);
-      y += 8;
-    }
+    // Cost info removed from client-facing report
   }
 
   // Observations
