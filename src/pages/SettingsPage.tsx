@@ -1,6 +1,6 @@
 import { useState } from "react";
 import PageShell from "@/components/PageShell";
-import { db, CompanyInfo, PixKey, Collaborator, ServiceType, generateId } from "@/lib/storage";
+import { db, CompanyInfo, PixKey, Collaborator, ServiceType, generateId, THEME_PALETTES } from "@/lib/storage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import ThemeSelector from "@/components/ThemeSelector";
+import { useTheme } from "@/hooks/use-theme";
 
 const pixTypeLabels: Record<PixKey['type'], string> = {
   cpf: 'CPF',
@@ -20,12 +22,15 @@ const pixTypeLabels: Record<PixKey['type'], string> = {
 };
 
 export default function SettingsPage() {
+  const { setTheme, refresh: refreshTheme } = useTheme();
   const [company, setCompany] = useState<CompanyInfo>(() => {
     const c = db.getCompany();
     return {
       ...c,
-      bankData: c.bankData || { bankName: '', agency: '', account: '', accountType: 'corrente', holderName: '', holderDocument: '' },
+      bankData: c.bankData || { bankName: '', agency: '', account: '', accountType: 'corrente' as const, holderName: '', holderDocument: '' },
       pixKeys: c.pixKeys || [],
+      planTier: c.planTier || (c.isPro ? 'pro' : 'free'),
+      selectedThemeId: c.selectedThemeId || 'default',
     };
   });
 
@@ -40,7 +45,18 @@ export default function SettingsPage() {
 
   const saveCompany = () => {
     db.saveCompany(company);
+    refreshTheme();
     toast.success("Dados salvos!");
+  };
+
+  const handleThemeSelect = (themeId: string) => {
+    setCompany(prev => ({ ...prev, selectedThemeId: themeId }));
+    setTheme(themeId);
+  };
+
+  const handlePlanChange = (tier: CompanyInfo['planTier']) => {
+    const isPro = tier === 'pro' || tier === 'premium';
+    setCompany(prev => ({ ...prev, planTier: tier, isPro }));
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,20 +226,39 @@ export default function SettingsPage() {
   return (
     <PageShell title="Configurações" showBack>
       <div className="mx-auto max-w-md space-y-6">
-        {/* PRO toggle */}
+        {/* Plan Tier */}
         <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                <Crown className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-foreground">Versão PRO</h2>
-                <p className="text-xs text-muted-foreground">Personalize logo, dados e remova marca d'água</p>
-              </div>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+              <Crown className="h-5 w-5 text-primary" />
             </div>
-            <Switch checked={company.isPro} onCheckedChange={v => setCompany({ ...company, isPro: v })} />
+            <div>
+              <h2 className="font-semibold text-foreground">Plano da Conta</h2>
+              <p className="text-xs text-muted-foreground">Selecione o nível de acesso</p>
+            </div>
           </div>
+          <Select value={company.planTier} onValueChange={(v) => handlePlanChange(v as CompanyInfo['planTier'])}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="free">🆓 FREE – Básico</SelectItem>
+              <SelectItem value="pro">⭐ PRO – R$ 99/mês</SelectItem>
+              <SelectItem value="premium">👑 PREMIUM – R$ 199/mês</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-2">
+            {company.planTier === 'free' && 'Funcionalidades básicas. Sem personalização visual ou relatórios avançados.'}
+            {company.planTier === 'pro' && 'Personalização visual, relatórios avançados, estoque integrado e PDF profissional.'}
+            {company.planTier === 'premium' && 'Tudo do PRO + Dashboard estratégico, manutenção de equipamentos, gráficos e ranking.'}
+          </p>
+        </div>
+
+        {/* Theme Selector */}
+        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+          <ThemeSelector
+            selectedId={company.selectedThemeId}
+            onSelect={handleThemeSelect}
+            canChange={company.isPro}
+          />
         </div>
 
         {/* Company Info */}
