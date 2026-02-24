@@ -73,7 +73,7 @@ export default function CalculatorPage() {
                   <SelectContent>
                     {products.map(p => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name} {p.availableVolume !== null ? `(${p.availableVolume.toFixed(2)}L)` : ""}
+                        {p.name} {p.availableVolume != null ? `(${p.availableVolume.toFixed(2)}L)` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
