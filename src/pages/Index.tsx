@@ -2,7 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle } from "lucide-react";
 import { getLowStockProducts, Product } from "@/lib/storage";
+import { updateLastActive } from "@/lib/analytics";
 import logo from "@/assets/logo_app.png";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
+import OnboardingBanner from "@/components/OnboardingBanner";
 
 const menuItems = [
   { path: "/clientes", icon: Users, label: "Clientes", desc: "Gerencie seus clientes" },
@@ -20,6 +23,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setLowStockProducts(getLowStockProducts());
+    updateLastActive();
   }, []);
 
   return (
@@ -32,6 +36,10 @@ export default function Dashboard() {
           Gestão Inteligente para Higienização Profissional
         </p>
       </div>
+
+      {/* Onboarding */}
+      <OnboardingChecklist />
+      <OnboardingBanner />
 
       {/* Stock Alerts */}
       {lowStockProducts.length > 0 && (
