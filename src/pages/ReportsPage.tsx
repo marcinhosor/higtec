@@ -41,6 +41,23 @@ export default function ReportsPage() {
 
   const suggestion = getMaintenanceSuggestion(form.serviceType);
 
+  const getDefaultProcedure = (serviceType: string) => {
+    const servico = serviceType || '{serviço}';
+    return `Fazemos a avaliação do seu ${servico}, identificando o nível e o tipo de sujidade presente.
+
+Aplicamos os produtos adequados de acordo com a fibra do tecido e o tipo de material, respeitando as características específicas da superfície.
+
+Deixamos os produtos agir pelo tempo necessário para melhor desempenho na remoção das sujidades.
+
+Realizamos escovação técnica para desprendimento da sujeira impregnada.
+
+Em seguida, efetuamos o enxágue por extração com máquinas de alta potência.
+
+Após a finalização, aplicamos um perfume premium.
+
+Seu ${servico} leva de 4 a 8 horas para estar completamente seco e pronto para uso.`;
+  };
+
   // Neighborhood revenue data
   const neighborhoodData = useMemo(() => {
     const approvedQuotes = quotes.filter(q => q.status === 'aprovado');
@@ -91,8 +108,17 @@ export default function ReportsPage() {
       setForm(f => ({
         ...f, date: appt.date, serviceType: appt.serviceType,
         observations: appt.observations, technicianId: appt.technicianId || "", technicianName: appt.technicianName || "",
+        procedure: f.procedure || getDefaultProcedure(appt.serviceType),
       }));
     }
+  };
+
+  const handleServiceTypeChange = (value: string) => {
+    setForm(f => ({
+      ...f,
+      serviceType: value,
+      procedure: (!f.procedure || f.procedure === getDefaultProcedure(f.serviceType)) ? getDefaultProcedure(value) : f.procedure,
+    }));
   };
 
   const generateText = () => {
@@ -202,7 +228,7 @@ ${company.name} - Higienização Profissional
                 </div>
               )}
 
-              <div><Label>Tipo de Serviço</Label><Input value={form.serviceType} onChange={e => setForm({...form, serviceType: e.target.value})} placeholder="Higienização de sofá..." /></div>
+              <div><Label>Tipo de Serviço</Label><Input value={form.serviceType} onChange={e => handleServiceTypeChange(e.target.value)} placeholder="Higienização de sofá..." /></div>
               <div><Label>Data</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
               
               <div className="grid grid-cols-2 gap-2">
