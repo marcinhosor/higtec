@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import PageShell from "@/components/PageShell";
 import { db, Appointment, Client, Collaborator, BRAZILIAN_STATES, generateId } from "@/lib/storage";
-import { Plus, Check, Clock, MapPin, Trash2, Edit, User } from "lucide-react";
+import { Plus, Check, Clock, MapPin, Trash2, Edit, User, Play } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -11,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 
 export default function AgendaPage() {
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -216,7 +218,10 @@ export default function AgendaPage() {
                   <button onClick={() => remove(a.id)} className="rounded-lg p-2 text-destructive hover:bg-destructive/10"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" className="rounded-full gap-1 text-xs" onClick={() => navigate(`/execucao?appt=${a.id}`)}>
+                  <Play className="h-3.5 w-3.5" /> {a.status === "concluido" ? "Ver Execução" : "Iniciar Serviço"}
+                </Button>
                 <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openRoute(a.clientId)}><MapPin className="h-3.5 w-3.5" /> Rota</Button>
                 {a.clientId && (
                   <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openEditClient(a.clientId)}>

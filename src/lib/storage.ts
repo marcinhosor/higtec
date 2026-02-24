@@ -134,6 +134,60 @@ export type Collaborator = {
   createdAt: string;
 };
 
+export type ExecutionPhoto = {
+  id: string;
+  dataUrl: string;
+  description: string;
+  timestamp: string;
+  phase: 'before' | 'after';
+};
+
+export type NonConformity = {
+  id: string;
+  type: string;
+  severity: 'leve' | 'moderado' | 'grave';
+  description: string;
+  clientAware: boolean;
+  clientSignature: string;
+  timestamp: string;
+};
+
+export type ExecutionProduct = {
+  id: string;
+  productId: string;
+  productName: string;
+  dilution: string;
+  solutionVolumeLiters: number;
+  concentratedMl: number;
+  waterLiters: number;
+  deducted: boolean;
+};
+
+export type ServiceExecution = {
+  id: string;
+  appointmentId: string;
+  clientId: string;
+  clientName: string;
+  serviceType: string;
+  technicianId: string;
+  technicianName: string;
+  fiberType: string;
+  soilingLevel: string;
+  soilingType: string;
+  photosBefore: ExecutionPhoto[];
+  photosAfter: ExecutionPhoto[];
+  nonConformities: NonConformity[];
+  productsUsed: ExecutionProduct[];
+  observations: string;
+  processDescription: string;
+  startTime: string;
+  endTime: string;
+  totalMinutes: number;
+  totalCost: number;
+  status: 'em_andamento' | 'finalizado';
+  createdAt: string;
+};
+
 export type PixKey = {
   id: string;
   type: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
@@ -168,7 +222,6 @@ export type CompanyInfo = {
   bankData: BankData;
   pixKeys: PixKey[];
 };
-
 const KEYS = {
   clients: 'hig_clients',
   appointments: 'hig_appointments',
@@ -179,6 +232,7 @@ const KEYS = {
   manufacturers: 'hig_manufacturers',
   collaborators: 'hig_collaborators',
   serviceTypes: 'hig_service_types',
+  executions: 'hig_executions',
 };
 
 const DEFAULT_SERVICE_TYPES: Omit<ServiceType, 'id' | 'createdAt'>[] = [
@@ -241,6 +295,9 @@ export const db = {
   },
   saveServiceTypes: (s: ServiceType[]) => set(KEYS.serviceTypes, s),
 
+  getExecutions: (): ServiceExecution[] => get(KEYS.executions, []),
+  saveExecutions: (e: ServiceExecution[]) => set(KEYS.executions, e),
+
   addManufacturer: (name: string): Manufacturer => {
     const manufacturers = get<Manufacturer[]>(KEYS.manufacturers, []);
     const existing = manufacturers.find(m => m.name.toLowerCase() === name.toLowerCase());
@@ -275,6 +332,7 @@ export const db = {
       company: db.getCompany(),
       collaborators: db.getCollaborators(),
       serviceTypes: db.getServiceTypes(),
+      executions: db.getExecutions(),
     });
   },
 
@@ -287,6 +345,7 @@ export const db = {
     if (data.company) db.saveCompany(data.company);
     if (data.collaborators) db.saveCollaborators(data.collaborators);
     if (data.serviceTypes) db.saveServiceTypes(data.serviceTypes);
+    if (data.executions) db.saveExecutions(data.executions);
   },
 };
 
