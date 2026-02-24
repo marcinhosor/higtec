@@ -1,85 +1,68 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Check, Crown, Camera, BarChart3, Brain, Shield, ArrowLeft, Sparkles } from "lucide-react";
+import { Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles } from "lucide-react";
 import { startTrial, trackEvent, getSubscription } from "@/lib/analytics";
 import { db } from "@/lib/storage";
 import { useToast } from "@/hooks/use-toast";
 
-const plans = [
-  {
-    id: "start",
-    name: "START",
-    price: 39,
-    highlight: false,
-    features: [
-      "Agenda ilimitada",
-      "Cadastro de clientes",
-      "Orçamentos básicos",
-      "Relatório simples",
-    ],
-  },
-  {
-    id: "pro",
-    name: "PRO",
-    price: 99,
-    highlight: true,
-    badge: "Mais escolhido",
-    features: [
-      "Tudo do START",
-      "Relatórios com sua marca",
-      "Fotos antes e depois no PDF",
-      "Controle de estoque automático",
-      "Calculadora de diluição integrada",
-      "Gestão financeira completa",
-      "Registro de não conformidades",
-    ],
-  },
-  {
-    id: "premium",
-    name: "PREMIUM",
-    price: 199,
-    highlight: false,
-    features: [
-      "Tudo do PRO",
-      "Dashboard avançado",
-      "Suporte prioritário",
-      "Multi-técnicos",
-      "API de integração",
-      "Relatórios avançados",
-      "Backup na nuvem",
-    ],
-  },
+interface Feature {
+  label: string;
+  free: boolean;
+  pro: boolean;
+  premium: boolean;
+}
+
+const features: Feature[] = [
+  { label: "Agenda ilimitada", free: true, pro: true, premium: true },
+  { label: "Cadastro de clientes", free: true, pro: true, premium: true },
+  { label: "Orçamentos básicos", free: true, pro: true, premium: true },
+  { label: "Relatório simples", free: true, pro: true, premium: true },
+  { label: "Relatórios com sua marca", free: false, pro: true, premium: true },
+  { label: "Fotos antes e depois no PDF", free: false, pro: true, premium: true },
+  { label: "Controle de estoque automático", free: false, pro: true, premium: true },
+  { label: "Calculadora de diluição integrada", free: false, pro: true, premium: true },
+  { label: "Gestão financeira completa", free: false, pro: true, premium: true },
+  { label: "Registro de não conformidades", free: false, pro: true, premium: true },
+  { label: "Dashboard estratégico", free: false, pro: false, premium: true },
+  { label: "Suporte prioritário", free: false, pro: false, premium: true },
+  { label: "Multi-técnicos", free: false, pro: false, premium: true },
+  { label: "Manutenção de equipamentos", free: false, pro: false, premium: true },
+  { label: "Relatórios avançados", free: false, pro: false, premium: true },
+  { label: "Backup na nuvem", free: false, pro: false, premium: true },
 ];
 
-const benefitSections = [
+const plans = [
   {
-    icon: Brain,
-    title: "Controle Total",
-    items: ["Estoque automático", "Cálculo real de custo", "Margem por serviço"],
+    id: "pro" as const,
+    name: "PRO",
+    price: 99,
+    icon: Crown,
+    badge: "Mais escolhido",
+    accent: "hsl(43,72%,50%)",
+    description: "Para empresas que querem crescer com controle total.",
   },
   {
-    icon: Camera,
-    title: "Profissionalismo",
-    items: ["Fotos antes e depois", "Registro de ocorrências", "Relatório técnico premium"],
-  },
-  {
-    icon: BarChart3,
-    title: "Gestão Estratégica",
-    items: ["Dashboard de desempenho", "Controle de tempo médio", "Histórico completo por cliente"],
+    id: "premium" as const,
+    name: "PREMIUM",
+    price: 199,
+    icon: Gem,
+    badge: null,
+    accent: "hsl(270,60%,55%)",
+    description: "Para operações avançadas com múltiplos técnicos.",
   },
 ];
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [selectedPlan, setSelectedPlan] = useState("pro");
+  const [selectedPlan, setSelectedPlan] = useState<"pro" | "premium">("pro");
   const sub = getSubscription();
 
   const handleStartTrial = () => {
     startTrial();
     const company = db.getCompany();
-    company.planTier = selectedPlan as 'pro' | 'premium';
+    company.planTier = selectedPlan;
     company.isPro = true;
     db.saveCompany(company);
     trackEvent("started_trial", { plan: selectedPlan });
@@ -87,128 +70,148 @@ export default function CheckoutPage() {
     navigate("/");
   };
 
+  const selected = plans.find((p) => p.id === selectedPlan)!;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[hsl(0,0%,4%)] via-[hsl(0,0%,6%)] to-[hsl(0,0%,4%)] text-white">
-      {/* Back button */}
-      <div className="sticky top-0 z-50 bg-[hsl(0,0%,4%,0.9)] backdrop-blur-md border-b border-[hsl(0,0%,12%)]">
-        <div className="max-w-3xl mx-auto flex items-center px-4 py-3">
-          <button onClick={() => navigate(-1)} className="rounded-lg p-2 hover:bg-[hsl(0,0%,15%)]">
+    <div className="min-h-screen bg-gradient-to-b from-background via-muted/30 to-background text-foreground">
+      {/* Header */}
+      <div className="sticky top-0 z-50 bg-background/90 backdrop-blur-md border-b border-border">
+        <div className="max-w-4xl mx-auto flex items-center px-4 py-3">
+          <button onClick={() => navigate(-1)} className="rounded-lg p-2 hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <span className="ml-2 text-sm font-medium text-[hsl(0,0%,60%)]">Voltar</span>
+          <span className="ml-2 text-sm font-medium text-muted-foreground">Voltar</span>
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-10">
+      <div className="max-w-4xl mx-auto px-4 py-10">
         {/* Hero */}
-        <div className="text-center mb-12">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[hsl(43,72%,55%)] to-[hsl(30,80%,45%)] shadow-lg shadow-[hsl(43,72%,45%,0.3)]">
-            <Crown className="h-8 w-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight leading-tight sm:text-4xl">
-            Transforme seu negócio em uma{" "}
-            <span className="bg-gradient-to-r from-[hsl(43,72%,60%)] to-[hsl(30,80%,50%)] bg-clip-text text-transparent">
-              operação profissional
-            </span>{" "}
-            de alto padrão.
+        <div className="text-center mb-10">
+          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+            Escolha o plano ideal para{" "}
+            <span className="bg-gradient-to-r from-[hsl(43,72%,60%)] to-[hsl(270,60%,55%)] bg-clip-text text-transparent">
+              seu negócio
+            </span>
           </h1>
-          <p className="mt-4 text-base text-[hsl(0,0%,55%)] max-w-lg mx-auto">
-            Tudo que você precisa para controlar, organizar e escalar sua empresa de higienização em um único sistema.
+          <p className="mt-3 text-muted-foreground max-w-lg mx-auto">
+            Compare os recursos e comece com 7 dias grátis. Cancele quando quiser.
           </p>
         </div>
 
-        {/* Benefits grid */}
-        <div className="grid gap-4 sm:grid-cols-3 mb-14">
-          {benefitSections.map((s) => (
+        {/* Plan cards side by side */}
+        <div className="grid gap-5 sm:grid-cols-2 mb-10">
+          {plans.map((plan) => {
+            const isSelected = selectedPlan === plan.id;
+            const Icon = plan.icon;
+            return (
+              <button
+                key={plan.id}
+                onClick={() => setSelectedPlan(plan.id)}
+                className={`relative rounded-2xl border-2 p-6 text-left transition-all ${
+                  isSelected
+                    ? "border-primary bg-primary/5 shadow-lg"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                }`}
+              >
+                {plan.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-[hsl(43,72%,50%)] to-[hsl(30,80%,45%)] px-3 py-0.5 text-xs font-bold text-white whitespace-nowrap">
+                    {plan.badge}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 mb-3">
+                  <div
+                    className="flex h-11 w-11 items-center justify-center rounded-xl"
+                    style={{ backgroundColor: `${plan.accent}20` }}
+                  >
+                    <Icon className="h-6 w-6" style={{ color: plan.accent }} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold tracking-widest text-muted-foreground uppercase">{plan.name}</p>
+                    <p>
+                      <span className="text-3xl font-extrabold">R$ {plan.price}</span>
+                      <span className="text-sm text-muted-foreground">/mês</span>
+                    </p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">{plan.description}</p>
+                {isSelected && (
+                  <div className="absolute top-4 right-4">
+                    <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center">
+                      <Check className="h-4 w-4 text-primary-foreground" />
+                    </div>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Feature comparison table */}
+        <div className="rounded-2xl border border-border bg-card overflow-hidden mb-10">
+          <div className="grid grid-cols-[1fr_80px_80px_80px] sm:grid-cols-[1fr_100px_100px_100px] text-center text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border bg-muted/50">
+            <div className="p-3 text-left">Recurso</div>
+            <div className="p-3">Free</div>
+            <div className="p-3" style={{ color: "hsl(43,72%,50%)" }}>Pro</div>
+            <div className="p-3" style={{ color: "hsl(270,60%,55%)" }}>Premium</div>
+          </div>
+          {features.map((f, i) => (
             <div
-              key={s.title}
-              className="rounded-2xl border border-[hsl(0,0%,14%)] bg-[hsl(0,0%,8%)] p-5"
+              key={f.label}
+              className={`grid grid-cols-[1fr_80px_80px_80px] sm:grid-cols-[1fr_100px_100px_100px] items-center text-center ${
+                i % 2 === 0 ? "bg-transparent" : "bg-muted/20"
+              }`}
             >
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(43,72%,45%,0.12)]">
-                <s.icon className="h-5 w-5 text-[hsl(43,72%,60%)]" />
-              </div>
-              <h3 className="font-bold text-white mb-2">{s.title}</h3>
-              <ul className="space-y-1.5">
-                {s.items.map((item) => (
-                  <li key={item} className="flex items-center gap-2 text-sm text-[hsl(0,0%,65%)]">
-                    <Check className="h-3.5 w-3.5 shrink-0 text-[hsl(43,72%,55%)]" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
+              <div className="p-3 text-left text-sm">{f.label}</div>
+              <CellIcon value={f.free} />
+              <CellIcon value={f.pro} />
+              <CellIcon value={f.premium} />
             </div>
           ))}
         </div>
 
-        {/* Social proof */}
-        <div className="mb-12 text-center">
-          <p className="text-sm text-[hsl(0,0%,50%)] italic">
-            "Empresas que utilizam sistemas estruturados têm até{" "}
-            <span className="font-semibold text-[hsl(43,72%,60%)]">40%</span> mais controle operacional."
-          </p>
-        </div>
-
-        {/* Plans */}
-        <div className="grid gap-4 sm:grid-cols-3 mb-12">
-          {plans.map((plan) => (
-            <button
-              key={plan.id}
-              onClick={() => setSelectedPlan(plan.id)}
-              className={`relative rounded-2xl border p-5 text-left transition-all ${
-                selectedPlan === plan.id
-                  ? "border-[hsl(43,72%,50%)] bg-[hsl(43,72%,45%,0.06)] shadow-lg shadow-[hsl(43,72%,45%,0.1)]"
-                  : "border-[hsl(0,0%,14%)] bg-[hsl(0,0%,8%)] hover:border-[hsl(0,0%,22%)]"
-              }`}
-            >
-              {plan.badge && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-[hsl(43,72%,50%)] to-[hsl(30,80%,45%)] px-3 py-0.5 text-xs font-bold text-white">
-                  {plan.badge}
-                </div>
-              )}
-              <p className="text-xs font-bold tracking-widest text-[hsl(0,0%,50%)] uppercase">{plan.name}</p>
-              <p className="mt-2">
-                <span className="text-3xl font-extrabold text-white">R$ {plan.price}</span>
-                <span className="text-sm text-[hsl(0,0%,45%)]">/mês</span>
-              </p>
-              <ul className="mt-4 space-y-1.5">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-xs text-[hsl(0,0%,65%)]">
-                    <Check className="h-3 w-3 shrink-0 text-[hsl(43,72%,55%)]" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-            </button>
-          ))}
-        </div>
-
         {/* Guarantee */}
-        <div className="mb-8 rounded-2xl border border-[hsl(0,0%,14%)] bg-[hsl(0,0%,8%)] p-5 text-center">
+        <div className="mb-8 rounded-2xl border border-border bg-card p-5 text-center">
           <Shield className="mx-auto mb-2 h-6 w-6 text-[hsl(152,60%,50%)]" />
-          <p className="font-bold text-white">Teste grátis de 7 dias</p>
-          <p className="mt-1 text-sm text-[hsl(0,0%,55%)]">Cancele quando quiser. Sem compromisso.</p>
+          <p className="font-bold">Teste grátis de 7 dias</p>
+          <p className="mt-1 text-sm text-muted-foreground">Cancele quando quiser. Sem compromisso.</p>
         </div>
 
         {/* CTA */}
         <Button
           onClick={handleStartTrial}
           disabled={sub.subscriptionStatus === "trial" || sub.subscriptionStatus === "active"}
-          className="w-full h-14 rounded-2xl bg-gradient-to-r from-[hsl(43,72%,50%)] to-[hsl(30,80%,45%)] text-white text-lg font-bold border-none shadow-xl shadow-[hsl(43,72%,45%,0.25)] hover:from-[hsl(43,72%,55%)] hover:to-[hsl(30,80%,50%)] transition-all"
+          className="w-full h-14 rounded-2xl text-lg font-bold shadow-xl transition-all"
+          style={{
+            background: `linear-gradient(135deg, ${selected.accent}, ${selected.accent}cc)`,
+            color: "white",
+          }}
         >
           <Sparkles className="mr-2 h-5 w-5" />
-          {sub.subscriptionStatus === "trial" ? "Teste já ativado" : "Começar Teste Grátis Agora"}
+          {sub.subscriptionStatus === "trial"
+            ? "Teste já ativado"
+            : `Começar ${selected.name} — 7 Dias Grátis`}
         </Button>
 
         {sub.subscriptionStatus === "trial" && (
-          <p className="mt-3 text-center text-sm text-[hsl(43,72%,60%)]">
-            ✨ Seu teste PRO está ativo!
-          </p>
+          <p className="mt-3 text-center text-sm text-primary">✨ Seu teste está ativo!</p>
         )}
 
-        <p className="mt-6 text-center text-xs text-[hsl(0,0%,35%)]">
+        <p className="mt-6 text-center text-xs text-muted-foreground/60">
           Ao ativar, você concorda com os Termos de Uso e Política de Privacidade.
         </p>
       </div>
+    </div>
+  );
+}
+
+function CellIcon({ value }: { value: boolean }) {
+  return (
+    <div className="p-3 flex justify-center">
+      {value ? (
+        <Check className="h-4 w-4 text-[hsl(152,60%,50%)]" />
+      ) : (
+        <X className="h-4 w-4 text-muted-foreground/30" />
+      )}
     </div>
   );
 }
