@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileText, Share2, Download, Lock, BarChart3, MapPin, Users, Package, DollarSign, Route, ClipboardList, Wrench, TrendingUp, Clock } from "lucide-react";
+import { exportMonthlyPDF, exportClientsPDF, exportServicesPDF, exportProductsPDF } from "@/lib/pdf-reports";
 import { toast } from "sonner";
 import { generateServiceReportPDF } from "@/lib/pdf-quote";
 import ProUpgradeModal from "@/components/ProUpgradeModal";
@@ -480,9 +481,17 @@ ${company.name} - Higienização Profissional
             {/* ==== MONTHLY SECTION ==== */}
             {mgmtSection === 'monthly' && (
               <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
-                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-primary" /> Relatório Mensal
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-primary" /> Relatório Mensal
+                  </h3>
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                    const label = mgmtFilter === 'month' ? monthOptions.find(m => m.value === mgmtMonth)?.label || '' : mgmtFilter === 'client' ? clients.find(c => c.id === mgmtClientId)?.name || '' : 'Todos os dados';
+                    exportMonthlyPDF(company, expensesSummary, label);
+                  }}>
+                    <Download className="h-3 w-3 mr-1" /> PDF
+                  </Button>
+                </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-accent p-3 text-center">
@@ -541,10 +550,18 @@ ${company.name} - Higienização Profissional
             {/* ==== CLIENTS SECTION ==== */}
             {mgmtSection === 'clients' && (
               <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
-                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary" /> Relatório por Cliente
-                  <span className="ml-auto text-xs text-muted-foreground">{clientsSummary.length} cliente(s)</span>
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary" /> Relatório por Cliente
+                    <span className="ml-auto text-xs text-muted-foreground">{clientsSummary.length} cliente(s)</span>
+                  </h3>
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                    const label = mgmtFilter === 'month' ? monthOptions.find(m => m.value === mgmtMonth)?.label || '' : 'Todos os dados';
+                    exportClientsPDF(company, clientsSummary, label);
+                  }}>
+                    <Download className="h-3 w-3 mr-1" /> PDF
+                  </Button>
+                </div>
                 
                 {clientsSummary.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">Nenhum cliente com serviço no período</p>
@@ -577,10 +594,18 @@ ${company.name} - Higienização Profissional
             {/* ==== SERVICES SECTION ==== */}
             {mgmtSection === 'services' && (
               <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
-                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <Wrench className="h-4 w-4 text-primary" /> Relatório por Serviço
-                  <span className="ml-auto text-xs text-muted-foreground">{servicesSummary.length} tipo(s)</span>
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-primary" /> Relatório por Serviço
+                    <span className="ml-auto text-xs text-muted-foreground">{servicesSummary.length} tipo(s)</span>
+                  </h3>
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                    const label = mgmtFilter === 'month' ? monthOptions.find(m => m.value === mgmtMonth)?.label || '' : 'Todos os dados';
+                    exportServicesPDF(company, servicesSummary, label);
+                  }}>
+                    <Download className="h-3 w-3 mr-1" /> PDF
+                  </Button>
+                </div>
 
                 {servicesSummary.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">Nenhum serviço registrado no período</p>
@@ -616,10 +641,18 @@ ${company.name} - Higienização Profissional
             {/* ==== PRODUCTS SECTION ==== */}
             {mgmtSection === 'products' && (
               <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
-                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <Package className="h-4 w-4 text-primary" /> Relatório por Produto
-                  <span className="ml-auto text-xs text-muted-foreground">{productsSummary.length} produto(s)</span>
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                    <Package className="h-4 w-4 text-primary" /> Relatório por Produto
+                    <span className="ml-auto text-xs text-muted-foreground">{productsSummary.length} produto(s)</span>
+                  </h3>
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                    const label = mgmtFilter === 'month' ? monthOptions.find(m => m.value === mgmtMonth)?.label || '' : 'Todos os dados';
+                    exportProductsPDF(company, productsSummary, label);
+                  }}>
+                    <Download className="h-3 w-3 mr-1" /> PDF
+                  </Button>
+                </div>
                 
                 {productsSummary.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">Nenhum produto registrado no período</p>
