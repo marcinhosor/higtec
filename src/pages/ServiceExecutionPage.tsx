@@ -108,6 +108,7 @@ export default function ServiceExecutionPage() {
   const [processDesc, setProcessDesc] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [isFinalized, setIsFinalized] = useState(false);
 
   // Auto-fill process description when service type changes
   useEffect(() => {
@@ -312,7 +313,7 @@ export default function ServiceExecutionPage() {
       }
 
       toast.success("Serviço finalizado e salvo com sucesso!");
-      navigate("/");
+      // Don't navigate immediately — let user generate report / share
       return;
     }
 
@@ -578,9 +579,17 @@ export default function ServiceExecutionPage() {
           <Button className="w-full rounded-full gap-2" variant="outline" onClick={() => saveExecution("em_andamento")}>
             <Package className="h-4 w-4" /> Salvar Progresso
           </Button>
-          <Button className="w-full rounded-full gap-2" onClick={() => saveExecution("finalizado")}>
-            <CheckCircle2 className="h-4 w-4" /> Finalizar Serviço
-            {isPro && totalCost > 0 && <span className="text-xs opacity-80">(baixa estoque automática)</span>}
+          <Button
+            className={`w-full rounded-full gap-2 transition-all ${isFinalized ? 'bg-green-600 hover:bg-green-700 text-white' : ''}`}
+            onClick={() => {
+              saveExecution("finalizado");
+              setIsFinalized(true);
+            }}
+            disabled={isFinalized}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            {isFinalized ? '✅ Serviço Finalizado' : 'Finalizar Serviço'}
+            {!isFinalized && isPro && totalCost > 0 && <span className="text-xs opacity-80">(baixa estoque automática)</span>}
           </Button>
           {(endTime || execution?.status === "finalizado") && (
             <>
