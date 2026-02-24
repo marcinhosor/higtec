@@ -63,11 +63,29 @@ export type Product = {
   profitMargin: number | null;
 };
 
+export type ServiceType = {
+  id: string;
+  name: string;
+  defaultPrice: number;
+  avgExecutionMinutes: number;
+  avgMarginPercent: number;
+  isCustom: boolean;
+  isActive: boolean;
+  order: number;
+  createdAt: string;
+};
+
 export type QuoteServiceItem = {
   id: string;
   name: string;
   quantity: number;
   unitPrice: number;
+  // Area-based fields (Tapete/Carpete)
+  isAreaBased?: boolean;
+  length?: number;
+  width?: number;
+  pricePerM2?: number;
+  calculatedArea?: number;
 };
 
 export type Quote = {
@@ -149,7 +167,21 @@ const KEYS = {
   quoteCounter: 'hig_quote_counter',
   manufacturers: 'hig_manufacturers',
   collaborators: 'hig_collaborators',
+  serviceTypes: 'hig_service_types',
 };
+
+const DEFAULT_SERVICE_TYPES: Omit<ServiceType, 'id' | 'createdAt'>[] = [
+  { name: 'Sofá', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 0 },
+  { name: 'Sofá Retrátil/Reclinável', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 1 },
+  { name: 'Colchão', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 2 },
+  { name: 'Cadeira', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 3 },
+  { name: 'Poltrona', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 4 },
+  { name: 'Tapete', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 5 },
+  { name: 'Carpete', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 6 },
+  { name: 'Banco Automotivo', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 7 },
+  { name: 'Impermeabilização', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 8 },
+  { name: 'Outro', defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0, isCustom: false, isActive: true, order: 9 },
+];
 
 function get<T>(key: string, fallback: T): T {
   try {
@@ -182,6 +214,19 @@ export const db = {
   
   getCollaborators: (): Collaborator[] => get(KEYS.collaborators, []),
   saveCollaborators: (c: Collaborator[]) => set(KEYS.collaborators, c),
+
+  getServiceTypes: (): ServiceType[] => {
+    const stored = get<ServiceType[]>(KEYS.serviceTypes, []);
+    if (stored.length === 0) {
+      const defaults: ServiceType[] = DEFAULT_SERVICE_TYPES.map(s => ({
+        ...s, id: generateId(), createdAt: new Date().toISOString()
+      }));
+      set(KEYS.serviceTypes, defaults);
+      return defaults;
+    }
+    return stored;
+  },
+  saveServiceTypes: (s: ServiceType[]) => set(KEYS.serviceTypes, s),
 
   addManufacturer: (name: string): Manufacturer => {
     const manufacturers = get<Manufacturer[]>(KEYS.manufacturers, []);
@@ -216,6 +261,7 @@ export const db = {
       quotes: db.getQuotes(),
       company: db.getCompany(),
       collaborators: db.getCollaborators(),
+      serviceTypes: db.getServiceTypes(),
     });
   },
 
@@ -227,6 +273,7 @@ export const db = {
     if (data.quotes) db.saveQuotes(data.quotes);
     if (data.company) db.saveCompany(data.company);
     if (data.collaborators) db.saveCollaborators(data.collaborators);
+    if (data.serviceTypes) db.saveServiceTypes(data.serviceTypes);
   },
 };
 

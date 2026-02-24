@@ -1,13 +1,13 @@
 import { useState } from "react";
 import PageShell from "@/components/PageShell";
-import { db, CompanyInfo, PixKey, Collaborator, generateId } from "@/lib/storage";
+import { db, CompanyInfo, PixKey, Collaborator, ServiceType, generateId } from "@/lib/storage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX } from "lucide-react";
+import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
@@ -32,6 +32,10 @@ export default function SettingsPage() {
   const [collaborators, setCollaborators] = useState<Collaborator[]>(() => db.getCollaborators());
   const [collabOpen, setCollabOpen] = useState(false);
   const [collabForm, setCollabForm] = useState({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
+
+  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(() => db.getServiceTypes());
+  const [editingST, setEditingST] = useState<ServiceType | null>(null);
+  const [stForm, setStForm] = useState({ name: "", defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0 });
 
   const saveCompany = () => {
     db.saveCompany(company);
@@ -109,6 +113,55 @@ export default function SettingsPage() {
     toast.success("Colaborador removido");
   };
 
+  // Service Types management
+  const saveServiceType = () => {
+    if (!stForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    if (editingST) {
+      const updated = serviceTypes.map(st => st.id === editingST.id ? { ...st, ...stForm } : st);
+      db.saveServiceTypes(updated);
+      setServiceTypes(updated);
+      setEditingST(null);
+      toast.success("Serviço atualizado!");
+    } else {
+      const newST: ServiceType = {
+        id: generateId(), name: stForm.name, defaultPrice: stForm.defaultPrice,
+        avgExecutionMinutes: stForm.avgExecutionMinutes, avgMarginPercent: stForm.avgMarginPercent,
+        isCustom: true, isActive: true, order: serviceTypes.length, createdAt: new Date().toISOString(),
+      };
+      const updated = [...serviceTypes, newST];
+      db.saveServiceTypes(updated);
+      setServiceTypes(updated);
+      toast.success("Serviço adicionado!");
+    }
+    setStForm({ name: "", defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0 });
+  };
+
+  const removeServiceType = (id: string) => {
+    const st = serviceTypes.find(s => s.id === id);
+    if (st && !st.isCustom) { toast.error("Tipos padrão não podem ser removidos"); return; }
+    const updated = serviceTypes.filter(s => s.id !== id);
+    db.saveServiceTypes(updated);
+    setServiceTypes(updated);
+    toast.success("Serviço removido");
+  };
+
+  const moveServiceType = (id: string, dir: -1 | 1) => {
+    const idx = serviceTypes.findIndex(s => s.id === id);
+    if (idx === -1) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= serviceTypes.length) return;
+    const arr = [...serviceTypes];
+    [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+    arr.forEach((s, i) => s.order = i);
+    db.saveServiceTypes(arr);
+    setServiceTypes(arr);
+  };
+
+  const startEditST = (st: ServiceType) => {
+    setEditingST(st);
+    setStForm({ name: st.name, defaultPrice: st.defaultPrice, avgExecutionMinutes: st.avgExecutionMinutes, avgMarginPercent: st.avgMarginPercent });
+  };
+
   const exportBackup = () => {
     const data = db.exportAll();
     const blob = new Blob([data], { type: "application/json" });
@@ -131,6 +184,7 @@ export default function SettingsPage() {
           db.importAll(reader.result as string);
           setCompany(db.getCompany());
           setCollaborators(db.getCollaborators());
+          setServiceTypes(db.getServiceTypes());
           toast.success("Backup restaurado com sucesso!");
         } catch { toast.error("Arquivo de backup inválido"); }
       };
@@ -337,6 +391,68 @@ export default function SettingsPage() {
             <p className="text-sm text-muted-foreground">💳 Personalização empresarial e dados de pagamento disponíveis na <span className="font-medium text-primary">versão PRO</span></p>
           </div>
         )}
+
+        {/* Service Types */}
+        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+              <Wrench className="h-5 w-5 text-primary" />
+            </div>
+            <h2 className="font-semibold text-foreground">Tipos de Serviço</h2>
+          </div>
+
+          {/* Add/Edit form */}
+          <div className="space-y-2 mb-4 rounded-lg border p-3">
+            <p className="text-xs font-medium text-muted-foreground">{editingST ? '✏️ Editando serviço' : '➕ Novo serviço'}{!company.isPro && ' (personalização PRO)'}</p>
+            <Input value={stForm.name} onChange={e => setStForm({ ...stForm, name: e.target.value })} placeholder="Nome do serviço" className="h-9" disabled={!company.isPro && !editingST} />
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <span className="text-xs text-muted-foreground">Valor padrão (R$)</span>
+                <Input type="number" min={0} step="0.01" value={stForm.defaultPrice || ""} onChange={e => setStForm({ ...stForm, defaultPrice: parseFloat(e.target.value) || 0 })} className="h-9" />
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Tempo (min)</span>
+                <Input type="number" min={0} value={stForm.avgExecutionMinutes || ""} onChange={e => setStForm({ ...stForm, avgExecutionMinutes: parseInt(e.target.value) || 0 })} className="h-9" />
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Margem (%){!company.isPro && ' 🔒'}</span>
+                <Input type="number" min={0} max={100} value={stForm.avgMarginPercent || ""} onChange={e => setStForm({ ...stForm, avgMarginPercent: parseFloat(e.target.value) || 0 })} className="h-9" disabled={!company.isPro} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={saveServiceType} size="sm" className="rounded-full flex-1">{editingST ? 'Atualizar' : 'Adicionar'}</Button>
+              {editingST && <Button onClick={() => { setEditingST(null); setStForm({ name: "", defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0 }); }} size="sm" variant="outline" className="rounded-full">Cancelar</Button>}
+            </div>
+          </div>
+
+          {/* List */}
+          <div className="space-y-1.5">
+            {serviceTypes.sort((a, b) => a.order - b.order).map(st => (
+              <div key={st.id} className="flex items-center justify-between rounded-lg border p-2.5 text-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-foreground truncate">{st.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {st.defaultPrice > 0 ? `R$ ${st.defaultPrice.toFixed(2)}` : 'Sem valor padrão'}
+                    {st.avgExecutionMinutes > 0 && ` • ${st.avgExecutionMinutes}min`}
+                    {company.isPro && st.avgMarginPercent > 0 && ` • ${st.avgMarginPercent}%`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  {company.isPro && (
+                    <>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, -1)}><ArrowUp className="h-3 w-3" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, 1)}><ArrowDown className="h-3 w-3" /></Button>
+                    </>
+                  )}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditST(st)}><Pencil className="h-3 w-3" /></Button>
+                  {company.isPro && st.isCustom && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeServiceType(st.id)}><Trash2 className="h-3 w-3" /></Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Proposal text settings (PRO) */}
         {company.isPro && (
