@@ -18,6 +18,22 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+const Section = ({ id, icon, title, children, activeSection, setActiveSection }: { id: string; icon: React.ReactNode; title: string; children: React.ReactNode; activeSection: string; setActiveSection: (v: string) => void }) => {
+  const isOpen = activeSection === id;
+  return (
+    <div className="rounded-xl bg-card shadow-card animate-fade-in overflow-hidden">
+      <button onClick={() => setActiveSection(isOpen ? "" : id)} className="w-full flex items-center justify-between p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">{icon}</div>
+          <span className="font-semibold text-foreground text-sm">{title}</span>
+        </div>
+        {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      </button>
+      {isOpen && <div className="px-4 pb-4 space-y-3">{children}</div>}
+    </div>
+  );
+};
+
 const FIBER_TYPES = ["Tecido sintético", "Tecido natural", "Couro", "Couro sintético", "Veludo", "Suede", "Linho", "Microfibra", "Outro"];
 const SOILING_LEVELS = ["Leve", "Moderado", "Pesado", "Crítico"];
 const SOILING_TYPES = ["Gordura", "Mofo", "Poeira acumulada", "Mancha orgânica", "Urina", "Outros"];
@@ -273,22 +289,6 @@ export default function ServiceExecutionPage() {
     toast.success(status === "finalizado" ? "Serviço finalizado e salvo!" : "Progresso salvo!");
   };
 
-  const Section = ({ id, icon, title, children }: { id: string; icon: React.ReactNode; title: string; children: React.ReactNode }) => {
-    const isOpen = activeSection === id;
-    return (
-      <div className="rounded-xl bg-card shadow-card animate-fade-in overflow-hidden">
-        <button onClick={() => setActiveSection(isOpen ? "" : id)} className="w-full flex items-center justify-between p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">{icon}</div>
-            <span className="font-semibold text-foreground text-sm">{title}</span>
-          </div>
-          {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-        </button>
-        {isOpen && <div className="px-4 pb-4 space-y-3">{children}</div>}
-      </div>
-    );
-  };
-
   return (
     <PageShell title="Execução do Serviço" showBack>
       <div className="mx-auto max-w-md space-y-3 pb-4">
@@ -325,7 +325,7 @@ export default function ServiceExecutionPage() {
         </div>
 
         {/* Section 1: BEFORE photos */}
-        <Section id="before" icon={<Camera className="h-4 w-4 text-primary" />} title="📷 Fotos ANTES">
+        <Section id="before" icon={<Camera className="h-4 w-4 text-primary" />} title="📷 Fotos ANTES" activeSection={activeSection} setActiveSection={setActiveSection}>
           <div>
             <div className="grid grid-cols-3 gap-2">
               {photosBefore.map(p => (
@@ -376,7 +376,7 @@ export default function ServiceExecutionPage() {
         </Section>
 
         {/* Section 2: Non-conformity */}
-        <Section id="nc" icon={<AlertTriangle className="h-4 w-4 text-warning" />} title="⚠️ Ocorrências / Não Conformidade">
+        <Section id="nc" icon={<AlertTriangle className="h-4 w-4 text-warning" />} title="⚠️ Ocorrências / Não Conformidade" activeSection={activeSection} setActiveSection={setActiveSection}>
           {nonConformities.map(nc => (
             <div key={nc.id} className="rounded-lg border p-3 text-sm space-y-1">
               <div className="flex items-center justify-between">
@@ -397,7 +397,7 @@ export default function ServiceExecutionPage() {
         </Section>
 
         {/* Section 3: Products & Dilution */}
-        <Section id="products" icon={<FlaskConical className="h-4 w-4 text-primary" />} title="🧪 Produtos e Diluição">
+        <Section id="products" icon={<FlaskConical className="h-4 w-4 text-primary" />} title="🧪 Produtos e Diluição" activeSection={activeSection} setActiveSection={setActiveSection}>
           {fiberType && soilingLevel && (
             <div className="rounded-lg bg-accent/50 border border-border p-3 text-xs">
               <p className="font-medium text-foreground mb-1">💡 Sugestão para {fiberType} com sujidade {soilingLevel}:</p>
@@ -431,7 +431,7 @@ export default function ServiceExecutionPage() {
         </Section>
 
         {/* Section 4: AFTER photos */}
-        <Section id="after" icon={<Camera className="h-4 w-4 text-success" />} title="📸 Fotos DEPOIS">
+        <Section id="after" icon={<Camera className="h-4 w-4 text-success" />} title="📸 Fotos DEPOIS" activeSection={activeSection} setActiveSection={setActiveSection}>
           <div className="grid grid-cols-3 gap-2">
             {photosAfter.map(p => (
               <div key={p.id} className="relative group">
@@ -458,7 +458,7 @@ export default function ServiceExecutionPage() {
         </Section>
 
         {/* Section 5: Process Report */}
-        <Section id="report" icon={<FileText className="h-4 w-4 text-primary" />} title="📄 Descrição do Processo">
+        <Section id="report" icon={<FileText className="h-4 w-4 text-primary" />} title="📄 Descrição do Processo" activeSection={activeSection} setActiveSection={setActiveSection}>
           <Textarea
             value={processDesc}
             onChange={e => setProcessDesc(e.target.value)}
