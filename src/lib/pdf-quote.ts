@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Quote, CompanyInfo } from "./storage";
+import { Quote, CompanyInfo, Client, Collaborator } from "./storage";
 
 const paymentLabels: Record<string, string> = {
   pix: "Pix",
@@ -300,4 +300,157 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   doc.text(quote.clientName, 150, y, { align: "center" });
 
   doc.save(`proposta-comercial-${quote.number}.pdf`);
+}
+
+type ServiceReportData = {
+  client: Client;
+  form: {
+    date: string;
+    serviceType: string;
+    soilingLevel: string;
+    soilingType: string;
+    productsUsed: string;
+    dilutionApplied: string;
+    volumeUsed: string;
+    observations: string;
+    technicianName: string;
+    diagnosis: string;
+    procedure: string;
+    dilutionJustification: string;
+    postServiceRecommendations: string;
+  };
+  suggestion: string;
+  company: CompanyInfo;
+  technician: Collaborator | null;
+};
+
+export function generateServiceReportPDF(data: ServiceReportData) {
+  const { client, form, suggestion, company, technician } = data;
+  const doc = new jsPDF();
+  const isPro = company.isPro;
+  const companyName = isPro ? company.name : "Hig Clean Tec";
+
+  if (!isPro) {
+    doc.setFontSize(50);
+    doc.setTextColor(200, 220, 240);
+    doc.text("HIG CLEAN TEC", 105, 150, { align: "center", angle: 45 });
+    doc.setTextColor(0, 0, 0);
+  }
+
+  let y = renderHeader(doc, company, isPro);
+
+  // Title
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(30, 30, 30);
+  doc.text("RELATÓRIO DE SERVIÇO", 105, y, { align: "center" });
+  y += 10;
+
+  // Client info table
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(60, 60, 60);
+
+  const infoRows = [
+    ["Cliente", client.name],
+    ["Endereço", client.address || "Não informado"],
+    ["Telefone", client.phone || "Não informado"],
+    ["Data", new Date(form.date + "T00:00").toLocaleDateString("pt-BR")],
+    ["Serviço", form.serviceType || "Não informado"],
+  ];
+  if (form.soilingLevel) infoRows.push(["Nível de Sujidade", form.soilingLevel]);
+  if (form.soilingType) infoRows.push(["Tipo de Sujidade", form.soilingType]);
+  if (form.technicianName) infoRows.push(["Técnico Responsável", form.technicianName]);
+
+  autoTable(doc, {
+    startY: y,
+    body: infoRows,
+    theme: "plain",
+    styles: { fontSize: 10, cellPadding: 2 },
+    columnStyles: { 0: { fontStyle: "bold", cellWidth: 50, textColor: [100, 100, 100] } },
+    margin: { left: 15, right: 15 },
+  });
+  y = (doc as any).lastAutoTable.finalY + 8;
+
+  // Products & dilution
+  const addField = (label: string, value: string) => {
+    if (!value) return;
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(41, 128, 205);
+    doc.setFontSize(11);
+    doc.text(label, 15, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(value, 175);
+    doc.text(lines, 15, y);
+    y += lines.length * 5 + 6;
+  };
+
+  addField("Produtos Utilizados", form.productsUsed);
+  if (form.dilutionApplied) addField("Diluição Aplicada", form.dilutionApplied);
+  if (form.volumeUsed) addField("Volume Utilizado", form.volumeUsed);
+  addField("Observações Técnicas", form.observations);
+
+  // PRO: Technical description
+  if (isPro) {
+    if (form.diagnosis || form.procedure || form.dilutionJustification || form.postServiceRecommendations) {
+      if (y > 220) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(41, 128, 205);
+      doc.text("DESCRIÇÃO TÉCNICA DO PROCESSO", 15, y);
+      y += 8;
+
+      addField("Diagnóstico Inicial", form.diagnosis);
+      addField("Procedimento Aplicado", form.procedure);
+      addField("Justificativa da Diluição", form.dilutionJustification);
+      addField("Recomendações Pós-serviço", form.postServiceRecommendations);
+    }
+  }
+
+  // Maintenance suggestion
+  if (form.serviceType) {
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFillColor(240, 248, 255);
+    doc.roundedRect(15, y - 2, 180, 12, 3, 3, "F");
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(41, 128, 205);
+    doc.text(`Recomendação: nova higienização em ${suggestion}`, 20, y + 6);
+    y += 18;
+  }
+
+  // Payment footer (PRO)
+  y = renderPaymentFooter(doc, company, y);
+
+  // Signature area
+  if (y < 240) y = 240;
+  if (y > 260) { doc.addPage(); y = 240; }
+
+  doc.setDrawColor(150, 150, 150);
+  doc.line(30, y, 90, y);
+  doc.line(120, y, 180, y);
+  y += 5;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+
+  // Technician signature
+  if (isPro && technician?.signature) {
+    try {
+      doc.addImage(technician.signature, "PNG", 35, y - 25, 50, 18);
+    } catch { /* signature load failed */ }
+  }
+
+  doc.text(form.technicianName || companyName, 60, y, { align: "center" });
+  if (technician?.role) {
+    y += 4;
+    doc.text(technician.role, 60, y, { align: "center" });
+  }
+
+  doc.text(client.name, 150, y - (technician?.role ? 4 : 0), { align: "center" });
+
+  doc.save(`relatorio-servico-${client.name.replace(/\s+/g, '-').toLowerCase()}.pdf`);
 }

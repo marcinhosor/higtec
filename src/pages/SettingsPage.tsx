@@ -1,13 +1,14 @@
 import { useState } from "react";
 import PageShell from "@/components/PageShell";
-import { db, CompanyInfo, PixKey, generateId } from "@/lib/storage";
+import { db, CompanyInfo, PixKey, Collaborator, generateId } from "@/lib/storage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus } from "lucide-react";
+import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 const pixTypeLabels: Record<PixKey['type'], string> = {
@@ -28,6 +29,10 @@ export default function SettingsPage() {
     };
   });
 
+  const [collaborators, setCollaborators] = useState<Collaborator[]>(() => db.getCollaborators());
+  const [collabOpen, setCollabOpen] = useState(false);
+  const [collabForm, setCollabForm] = useState({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
+
   const saveCompany = () => {
     db.saveCompany(company);
     toast.success("Dados salvos!");
@@ -37,9 +42,7 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      setCompany({ ...company, logo: reader.result as string });
-    };
+    reader.onload = () => { setCompany({ ...company, logo: reader.result as string }); };
     reader.readAsDataURL(file);
   };
 
@@ -47,9 +50,15 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      setCompany({ ...company, signature: reader.result as string });
-    };
+    reader.onload = () => { setCompany({ ...company, signature: reader.result as string }); };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCollabSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { setCollabForm({ ...collabForm, signature: reader.result as string }); };
     reader.readAsDataURL(file);
   };
 
@@ -59,25 +68,45 @@ export default function SettingsPage() {
   };
 
   const updatePixKey = (id: string, updates: Partial<PixKey>) => {
-    setCompany({
-      ...company,
-      pixKeys: company.pixKeys.map(k => k.id === id ? { ...k, ...updates } : k),
-    });
+    setCompany({ ...company, pixKeys: company.pixKeys.map(k => k.id === id ? { ...k, ...updates } : k) });
   };
 
   const removePixKey = (id: string) => {
     const filtered = company.pixKeys.filter(k => k.id !== id);
-    if (filtered.length > 0 && !filtered.some(k => k.isPrimary)) {
-      filtered[0].isPrimary = true;
-    }
+    if (filtered.length > 0 && !filtered.some(k => k.isPrimary)) filtered[0].isPrimary = true;
     setCompany({ ...company, pixKeys: filtered });
   };
 
   const setPrimaryPix = (id: string) => {
-    setCompany({
-      ...company,
-      pixKeys: company.pixKeys.map(k => ({ ...k, isPrimary: k.id === id })),
-    });
+    setCompany({ ...company, pixKeys: company.pixKeys.map(k => ({ ...k, isPrimary: k.id === id })) });
+  };
+
+  const saveCollaborator = () => {
+    if (!collabForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    const collab: Collaborator = {
+      id: generateId(), name: collabForm.name, role: collabForm.role, phone: collabForm.phone,
+      cpf: collabForm.cpf, admissionDate: collabForm.admissionDate, status: 'ativo',
+      signature: collabForm.signature, createdAt: new Date().toISOString(),
+    };
+    const updated = [...collaborators, collab];
+    db.saveCollaborators(updated);
+    setCollaborators(updated);
+    setCollabOpen(false);
+    setCollabForm({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
+    toast.success("Colaborador cadastrado!");
+  };
+
+  const toggleCollabStatus = (id: string) => {
+    const updated = collaborators.map(c => c.id === id ? { ...c, status: (c.status === 'ativo' ? 'inativo' : 'ativo') as Collaborator['status'] } : c);
+    db.saveCollaborators(updated);
+    setCollaborators(updated);
+  };
+
+  const removeCollaborator = (id: string) => {
+    const updated = collaborators.filter(c => c.id !== id);
+    db.saveCollaborators(updated);
+    setCollaborators(updated);
+    toast.success("Colaborador removido");
   };
 
   const exportBackup = () => {
@@ -85,17 +114,14 @@ export default function SettingsPage() {
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `hig-clean-tec-backup-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = `hig-clean-tec-backup-${new Date().toISOString().split("T")[0]}.json`;
+    a.click(); URL.revokeObjectURL(url);
     toast.success("Backup exportado!");
   };
 
   const importBackup = () => {
     const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json";
+    input.type = "file"; input.accept = ".json";
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
@@ -104,10 +130,9 @@ export default function SettingsPage() {
         try {
           db.importAll(reader.result as string);
           setCompany(db.getCompany());
+          setCollaborators(db.getCollaborators());
           toast.success("Backup restaurado com sucesso!");
-        } catch {
-          toast.error("Arquivo de backup inválido");
-        }
+        } catch { toast.error("Arquivo de backup inválido"); }
       };
       reader.readAsText(file);
     };
@@ -150,7 +175,6 @@ export default function SettingsPage() {
               <>
                 <div><Label>Endereço</Label><Input value={company.address} onChange={e => setCompany({ ...company, address: e.target.value })} /></div>
                 <div><Label>Instagram</Label><Input value={company.instagram} onChange={e => setCompany({ ...company, instagram: e.target.value })} placeholder="@seuinstagram" /></div>
-
                 <div>
                   <Label>Logo da Empresa</Label>
                   <div className="flex items-center gap-3 mt-1">
@@ -161,7 +185,6 @@ export default function SettingsPage() {
                     </label>
                   </div>
                 </div>
-
                 <div>
                   <Label>Assinatura (imagem)</Label>
                   <div className="flex items-center gap-3 mt-1">
@@ -174,9 +197,71 @@ export default function SettingsPage() {
                 </div>
               </>
             )}
-
             <Button onClick={saveCompany} className="w-full rounded-full gap-2"><Save className="h-4 w-4" /> Salvar</Button>
           </div>
+        </div>
+
+        {/* Collaborators */}
+        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                <Users className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="font-semibold text-foreground">Colaboradores</h2>
+            </div>
+            <Dialog open={collabOpen} onOpenChange={setCollabOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md mx-4 max-h-[85vh] overflow-y-auto">
+                <DialogHeader><DialogTitle>Novo Colaborador</DialogTitle></DialogHeader>
+                <div className="space-y-3">
+                  <div><Label>Nome Completo *</Label><Input value={collabForm.name} onChange={e => setCollabForm({...collabForm, name: e.target.value})} /></div>
+                  <div><Label>Cargo</Label><Input value={collabForm.role} onChange={e => setCollabForm({...collabForm, role: e.target.value})} placeholder="Técnico, Auxiliar..." /></div>
+                  <div><Label>Telefone</Label><Input value={collabForm.phone} onChange={e => setCollabForm({...collabForm, phone: e.target.value})} /></div>
+                  <div><Label>CPF (opcional)</Label><Input value={collabForm.cpf} onChange={e => setCollabForm({...collabForm, cpf: e.target.value})} /></div>
+                  <div><Label>Data de Admissão</Label><Input type="date" value={collabForm.admissionDate} onChange={e => setCollabForm({...collabForm, admissionDate: e.target.value})} /></div>
+                  {company.isPro && (
+                    <div>
+                      <Label>Assinatura Digital (imagem)</Label>
+                      <div className="flex items-center gap-3 mt-1">
+                        {collabForm.signature && <img src={collabForm.signature} alt="Assinatura" className="h-10 rounded-lg object-contain border" />}
+                        <label className="flex items-center gap-2 cursor-pointer rounded-full border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent">
+                          <ImagePlus className="h-4 w-4" /> {collabForm.signature ? "Trocar" : "Upload"}
+                          <input type="file" accept="image/*" className="hidden" onChange={handleCollabSignatureUpload} />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  <Button onClick={saveCollaborator} className="w-full rounded-full">Salvar</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {collaborators.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Nenhum colaborador cadastrado</p>
+          ) : (
+            <div className="space-y-2">
+              {collaborators.map(c => (
+                <div key={c.id} className={`rounded-lg border p-3 flex items-center justify-between ${c.status === 'inativo' ? 'opacity-50' : ''}`}>
+                  <div>
+                    <p className="font-medium text-foreground text-sm">{c.name}</p>
+                    <p className="text-xs text-muted-foreground">{c.role || "Sem cargo"} • {c.status === 'ativo' ? '✅ Ativo' : '⛔ Inativo'}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleCollabStatus(c.id)} title={c.status === 'ativo' ? 'Desativar' : 'Ativar'}>
+                      {c.status === 'ativo' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeCollaborator(c.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Payment Data (PRO) */}
@@ -279,7 +364,7 @@ export default function SettingsPage() {
               <Upload className="h-4 w-4" /> Restaurar
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-3">O backup inclui todos os clientes, agendamentos, produtos, orçamentos e configurações.</p>
+          <p className="text-xs text-muted-foreground mt-3">O backup inclui todos os clientes, agendamentos, produtos, orçamentos, colaboradores e configurações.</p>
         </div>
       </div>
     </PageShell>

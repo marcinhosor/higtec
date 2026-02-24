@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Appointment, generateId } from "@/lib/storage";
+import { db, Appointment, Collaborator, generateId } from "@/lib/storage";
 import { Plus, Check, Clock, MapPin, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,14 @@ import { toast } from "sonner";
 export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients] = useState(() => db.getClients());
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ clientId: "", clientName: "", date: "", time: "", serviceType: "", observations: "" });
+  const [form, setForm] = useState({ clientId: "", clientName: "", date: "", time: "", serviceType: "", observations: "", technicianId: "", technicianName: "" });
 
-  useEffect(() => { setAppointments(db.getAppointments()); }, []);
+  useEffect(() => {
+    setAppointments(db.getAppointments());
+    setCollaborators(db.getCollaborators().filter(c => c.status === 'ativo'));
+  }, []);
 
   const save = () => {
     if (!form.clientName.trim() || !form.date) { toast.error("Preencha cliente e data"); return; }
@@ -25,7 +29,7 @@ export default function AgendaPage() {
     db.saveAppointments(updated);
     setAppointments(updated);
     setOpen(false);
-    setForm({ clientId: "", clientName: "", date: "", time: "", serviceType: "", observations: "" });
+    setForm({ clientId: "", clientName: "", date: "", time: "", serviceType: "", observations: "", technicianId: "", technicianName: "" });
     toast.success("Agendamento criado!");
   };
 
@@ -88,6 +92,23 @@ export default function AgendaPage() {
                 <div><Label>Horário</Label><Input type="time" value={form.time} onChange={e => setForm({...form, time: e.target.value})} /></div>
               </div>
               <div><Label>Tipo de Serviço</Label><Input value={form.serviceType} onChange={e => setForm({...form, serviceType: e.target.value})} placeholder="Higienização de sofá, carro..." /></div>
+              
+              {/* Técnico responsável */}
+              {collaborators.length > 0 && (
+                <div>
+                  <Label>Técnico Responsável</Label>
+                  <Select onValueChange={v => {
+                    const col = collaborators.find(c => c.id === v);
+                    setForm({ ...form, technicianId: v, technicianName: col?.name || "" });
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o técnico" /></SelectTrigger>
+                    <SelectContent>
+                      {collaborators.map(c => <SelectItem key={c.id} value={c.id}>{c.name} - {c.role}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
               <div><Label>Observações</Label><Textarea value={form.observations} onChange={e => setForm({...form, observations: e.target.value})} /></div>
               <Button onClick={save} className="w-full rounded-full">Salvar</Button>
             </div>
@@ -109,6 +130,7 @@ export default function AgendaPage() {
                   <h3 className="font-semibold text-foreground">{a.clientName}</h3>
                   <p className="text-sm text-muted-foreground">{new Date(a.date + "T00:00").toLocaleDateString("pt-BR")} {a.time && `às ${a.time}`}</p>
                   {a.serviceType && <span className="mt-1 inline-block rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{a.serviceType}</span>}
+                  {a.technicianName && <p className="text-xs text-muted-foreground mt-1">👷 {a.technicianName}</p>}
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => toggleStatus(a.id)} className={`rounded-lg p-2 ${a.status === "concluido" ? "text-success" : "text-muted-foreground"} hover:bg-accent`}>

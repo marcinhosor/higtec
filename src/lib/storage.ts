@@ -29,6 +29,8 @@ export type Appointment = {
   serviceType: string;
   observations: string;
   status: 'agendado' | 'concluido';
+  technicianId: string;
+  technicianName: string;
 };
 
 export type ConsumptionRecord = {
@@ -91,6 +93,18 @@ export type Manufacturer = {
   createdAt: string;
 };
 
+export type Collaborator = {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  cpf: string;
+  admissionDate: string;
+  status: 'ativo' | 'inativo';
+  signature: string;
+  createdAt: string;
+};
+
 export type PixKey = {
   id: string;
   type: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
@@ -134,6 +148,7 @@ const KEYS = {
   quotes: 'hig_quotes',
   quoteCounter: 'hig_quote_counter',
   manufacturers: 'hig_manufacturers',
+  collaborators: 'hig_collaborators',
 };
 
 function get<T>(key: string, fallback: T): T {
@@ -164,6 +179,10 @@ export const db = {
 
   getManufacturers: (): Manufacturer[] => get(KEYS.manufacturers, []),
   saveManufacturers: (m: Manufacturer[]) => set(KEYS.manufacturers, m),
+  
+  getCollaborators: (): Collaborator[] => get(KEYS.collaborators, []),
+  saveCollaborators: (c: Collaborator[]) => set(KEYS.collaborators, c),
+
   addManufacturer: (name: string): Manufacturer => {
     const manufacturers = get<Manufacturer[]>(KEYS.manufacturers, []);
     const existing = manufacturers.find(m => m.name.toLowerCase() === name.toLowerCase());
@@ -196,6 +215,7 @@ export const db = {
       products: db.getProducts(),
       quotes: db.getQuotes(),
       company: db.getCompany(),
+      collaborators: db.getCollaborators(),
     });
   },
 
@@ -206,6 +226,7 @@ export const db = {
     if (data.products) db.saveProducts(data.products);
     if (data.quotes) db.saveQuotes(data.quotes);
     if (data.company) db.saveCompany(data.company);
+    if (data.collaborators) db.saveCollaborators(data.collaborators);
   },
 };
 
