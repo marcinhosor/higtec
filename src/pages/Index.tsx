@@ -6,6 +6,7 @@ import { updateLastActive } from "@/lib/analytics";
 import logo from "@/assets/logo_app.png";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import OnboardingBanner from "@/components/OnboardingBanner";
+import NotificationCenter from "@/components/NotificationCenter";
 
 const menuItems = [
   { path: "/clientes", icon: Users, label: "Clientes", desc: "Gerencie seus clientes" },
@@ -105,7 +106,10 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-screen flex-col bg-background pb-20">
       {/* Hero */}
-      <div className="gradient-primary px-6 pb-8 pt-10 text-center">
+      <div className="gradient-primary px-6 pb-8 pt-10 text-center relative">
+        <div className="absolute top-4 right-4">
+          <NotificationCenter />
+        </div>
         <img src={logo} alt="Hig Clean Tec" className="mx-auto mb-3 h-24 w-24 rounded-2xl bg-card/10 object-contain p-2" />
         <h1 className="text-2xl font-extrabold text-primary-foreground tracking-tight">Hig Clean Tec</h1>
         <p className="mt-1 text-sm text-primary-foreground/80 font-medium">
