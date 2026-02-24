@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle, Clock, BarChart3 } from "lucide-react";
-import { getLowStockProducts, Product, db, Client } from "@/lib/storage";
+import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle, Clock, BarChart3, Wrench } from "lucide-react";
+import { getLowStockProducts, getPendingMaintenanceEquipment, Product, Equipment, db, Client } from "@/lib/storage";
 import { updateLastActive } from "@/lib/analytics";
 import logo from "@/assets/logo_app.png";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
@@ -13,6 +13,7 @@ const menuItems = [
   { path: "/orcamentos", icon: Receipt, label: "Orçamentos", desc: "Crie orçamentos e propostas" },
   { path: "/calculadora", icon: Calculator, label: "Calculadora de Diluição", desc: "Calcule dosagens" },
   { path: "/produtos", icon: Package, label: "Produtos", desc: "Cadastro de produtos" },
+  { path: "/equipamentos", icon: Wrench, label: "Equipamentos", desc: "Manutenção (PREMIUM)" },
   { path: "/relatorios", icon: FileText, label: "Relatórios", desc: "Gerar relatórios PDF" },
   { path: "/painel", icon: BarChart3, label: "Painel Estratégico", desc: "Visão executiva (PREMIUM)" },
   { path: "/configuracoes", icon: Settings, label: "Configurações", desc: "Dados e backup" },
@@ -92,10 +93,12 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [maintenanceAlerts, setMaintenanceAlerts] = useState<MaintenanceAlert[]>([]);
+  const [equipmentAlerts, setEquipmentAlerts] = useState<Equipment[]>([]);
 
   useEffect(() => {
     setLowStockProducts(getLowStockProducts());
     setMaintenanceAlerts(getMaintenanceAlerts());
+    setEquipmentAlerts(getPendingMaintenanceEquipment());
     updateLastActive();
   }, []);
 
@@ -174,8 +177,40 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Equipment Maintenance Alerts */}
+      {equipmentAlerts.length > 0 && (
+        <div className="px-4 mb-2">
+          <div className="rounded-xl bg-card border border-border p-3 space-y-2 shadow-card">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Wrench className="h-4 w-4 text-primary" />
+              Manutenção de Equipamentos
+            </div>
+            {equipmentAlerts.map(eq => {
+              const next = new Date(eq.nextMaintenance);
+              const diffDays = Math.ceil((next.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+              const overdue = diffDays < 0;
+              return (
+                <button
+                  key={eq.id}
+                  onClick={() => navigate("/equipamentos")}
+                  className={`w-full text-left flex items-center justify-between rounded-lg border p-2.5 text-xs hover:opacity-80 transition-all ${overdue ? 'bg-destructive/10 border-destructive/25' : 'bg-yellow-500/10 border-yellow-500/25'}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <span className={`font-semibold ${overdue ? 'text-destructive' : 'text-yellow-600'}`}>{eq.name}</span>
+                    <p className="text-muted-foreground text-[10px] mt-0.5">{eq.model}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${overdue ? 'bg-destructive text-destructive-foreground' : 'bg-yellow-500 text-white'}`}>
+                    {overdue ? `${Math.abs(diffDays)}d atrasada` : `${diffDays}d restantes`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Menu Grid */}
-      <div className={`px-4 ${lowStockProducts.length === 0 && maintenanceAlerts.length === 0 ? '-mt-4' : ''}`}>
+      <div className={`px-4 ${lowStockProducts.length === 0 && maintenanceAlerts.length === 0 && equipmentAlerts.length === 0 ? '-mt-4' : ''}`}>
         <div className="grid grid-cols-2 gap-3">
           {menuItems.map((item) => (
             <button

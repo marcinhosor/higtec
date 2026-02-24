@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import PageShell from "@/components/PageShell";
-import { db, getLowStockProducts } from "@/lib/storage";
+import { db, getLowStockProducts, getPendingMaintenanceEquipment } from "@/lib/storage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
