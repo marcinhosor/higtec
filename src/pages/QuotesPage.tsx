@@ -112,6 +112,8 @@ export default function QuotesPage() {
       serviceType: q.services.map(s => s.name).join(", "),
       observations: `Orçamento #${q.number} - ${q.observations}`,
       status: "agendado" as const,
+      technicianId: "",
+      technicianName: "",
     };
     db.saveAppointments([...appointments, appt]);
     updateStatus(q.id, "aprovado");
