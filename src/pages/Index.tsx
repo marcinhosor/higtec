@@ -1,5 +1,7 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt } from "lucide-react";
+import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle } from "lucide-react";
+import { getLowStockProducts, Product } from "@/lib/storage";
 import logo from "@/assets/logo_app.png";
 
 const menuItems = [
@@ -14,6 +16,11 @@ const menuItems = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    setLowStockProducts(getLowStockProducts());
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-background pb-20">
@@ -26,8 +33,32 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {/* Stock Alerts */}
+      {lowStockProducts.length > 0 && (
+        <div className="px-4 -mt-4 mb-2">
+          <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              Estoque Baixo
+            </div>
+            {lowStockProducts.map(p => (
+              <button
+                key={p.id}
+                onClick={() => navigate("/produtos")}
+                className="w-full text-left flex items-center justify-between rounded-lg bg-card p-2 text-xs hover:bg-accent transition-colors"
+              >
+                <span className="font-medium text-foreground">{p.name}</span>
+                <span className={`font-bold ${p.stockStatus === 'critico' ? 'text-destructive' : 'text-warning'}`}>
+                  {p.availableVolume?.toFixed(2)}L restantes
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Menu Grid */}
-      <div className="px-4 -mt-4">
+      <div className={`px-4 ${lowStockProducts.length === 0 ? '-mt-4' : ''}`}>
         <div className="grid grid-cols-2 gap-3">
           {menuItems.map((item) => (
             <button
