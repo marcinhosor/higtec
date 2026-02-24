@@ -257,8 +257,14 @@ function get<T>(key: string, fallback: T): T {
   }
 }
 
-function set<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
+function set<T>(key: string, value: T): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    console.error('Storage quota exceeded for key:', key, e);
+    return false;
+  }
 }
 
 export const db = {
@@ -296,7 +302,7 @@ export const db = {
   saveServiceTypes: (s: ServiceType[]) => set(KEYS.serviceTypes, s),
 
   getExecutions: (): ServiceExecution[] => get(KEYS.executions, []),
-  saveExecutions: (e: ServiceExecution[]) => set(KEYS.executions, e),
+  saveExecutions: (e: ServiceExecution[]): boolean => set(KEYS.executions, e),
 
   addManufacturer: (name: string): Manufacturer => {
     const manufacturers = get<Manufacturer[]>(KEYS.manufacturers, []);
