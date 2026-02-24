@@ -17,7 +17,8 @@ export default function CalculatorPage() {
   const [selectedProductId, setSelectedProductId] = useState("");
 
   useEffect(() => {
-    setIsPro(db.getCompany().isPro);
+    const t = db.getCompany().planTier;
+    setIsPro(t === 'pro' || t === 'premium');
     setProducts(db.getProducts());
   }, []);
 

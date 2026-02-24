@@ -377,6 +377,8 @@ export const db = {
     const c: CompanyInfo = { ...defaults, ...get(KEYS.company, defaults) };
     if (!c.planTier) c.planTier = c.isPro ? 'pro' : 'free';
     if (!c.selectedThemeId) c.selectedThemeId = 'default';
+    // Keep isPro synced with planTier for backward compatibility
+    c.isPro = c.planTier !== 'free';
     return c;
   },
   saveCompany: (c: CompanyInfo) => set(KEYS.company, c),

@@ -79,10 +79,11 @@ export default function CheckoutPage() {
   const handleStartTrial = () => {
     startTrial();
     const company = db.getCompany();
+    company.planTier = selectedPlan as 'pro' | 'premium';
     company.isPro = true;
     db.saveCompany(company);
     trackEvent("started_trial", { plan: selectedPlan });
-    toast({ title: "🎉 Teste grátis ativado!", description: "Você tem 7 dias para experimentar todos os recursos PRO." });
+    toast({ title: "🎉 Teste grátis ativado!", description: `Você tem 7 dias para experimentar todos os recursos ${selectedPlan.toUpperCase()}.` });
     navigate("/");
   };
 
