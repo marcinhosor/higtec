@@ -309,7 +309,7 @@ export default function ProductsPage() {
           {products.map(p => {
             const pCostPerLiter = p.pricePaid && p.volumeLiters ? p.pricePaid / p.volumeLiters : null;
             const pmLabel = paymentMethods.find(m => m.value === p.paymentMethod)?.label;
-            const stockPercent = p.initialVolume && p.availableVolume !== null ? Math.round((p.availableVolume / p.initialVolume) * 100) : null;
+            const stockPercent = p.initialVolume && p.availableVolume != null ? Math.round((p.availableVolume / p.initialVolume) * 100) : null;
             const currentStatus = calculateStockStatus(p);
             const isCritical = currentStatus === "critico";
             const isLow = currentStatus === "baixo";
@@ -332,7 +332,7 @@ export default function ProductsPage() {
                     )}
 
                     {/* PRO stock display */}
-                    {isPro && p.availableVolume !== null && p.initialVolume !== null && (
+                    {isPro && p.availableVolume != null && p.initialVolume != null && (
                       <div className="mt-3 rounded-lg bg-accent/50 border border-border p-3 space-y-2">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                           <Package className="h-3.5 w-3.5" /> Estoque
