@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import PageShell from "@/components/PageShell";
 import { db, Quote, QuoteServiceItem, ServiceType, Client, Appointment, Collaborator, BRAZILIAN_STATES, generateId } from "@/lib/storage";
-import { Plus, Trash2, FileText, Send, CalendarPlus, Eye, Check, X, Clock, Ruler, User } from "lucide-react";
+import { Plus, Trash2, FileText, Send, CalendarPlus, Eye, Check, X, Clock, Ruler, User, Edit } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -164,6 +164,45 @@ export default function QuotesPage() {
     db.saveQuotes(updated);
     setQuotes(updated);
     toast.success("Orçamento removido");
+  };
+
+  const [editQuoteOpen, setEditQuoteOpen] = useState(false);
+  const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
+  const [editQuoteForm, setEditQuoteForm] = useState({
+    services: [] as QuoteServiceItem[],
+    executionDeadline: "", paymentMethod: "pix" as Quote["paymentMethod"],
+    observations: "", validityDays: 5, discountType: "percent" as Quote["discountType"], discountValue: 0,
+  });
+
+  const openEditQuote = (q: Quote) => {
+    setEditingQuote(q);
+    setEditQuoteForm({
+      services: q.services.map(s => ({ ...s })),
+      executionDeadline: q.executionDeadline, paymentMethod: q.paymentMethod,
+      observations: q.observations, validityDays: q.validityDays,
+      discountType: q.discountType, discountValue: q.discountValue,
+    });
+    setEditQuoteOpen(true);
+  };
+
+  const saveEditQuote = () => {
+    if (!editingQuote) return;
+    const finalServices = editQuoteForm.services.filter(s => s.name.trim());
+    const updated = quotes.map(q => q.id === editingQuote.id ? {
+      ...q, services: finalServices, executionDeadline: editQuoteForm.executionDeadline,
+      paymentMethod: editQuoteForm.paymentMethod, observations: editQuoteForm.observations,
+      validityDays: editQuoteForm.validityDays, discountType: editQuoteForm.discountType,
+      discountValue: editQuoteForm.discountValue,
+    } : q);
+    db.saveQuotes(updated);
+    setQuotes(updated);
+    setEditQuoteOpen(false);
+    setEditingQuote(null);
+    toast.success("Orçamento atualizado!");
+  };
+
+  const updateEditService = (id: string, field: keyof QuoteServiceItem, value: any) => {
+    setEditQuoteForm({ ...editQuoteForm, services: editQuoteForm.services.map(s => s.id === id ? { ...s, [field]: value } : s) });
   };
 
   const openScheduleDialog = (q: Quote) => {
@@ -497,6 +536,9 @@ export default function QuotesPage() {
                     </Button>
                   </>
                 )}
+                <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openEditQuote(q)}>
+                  <Edit className="h-3.5 w-3.5" /> Editar
+                </Button>
                 {q.clientId && (
                   <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openEditClient(q.clientId)}>
                     <User className="h-3.5 w-3.5" /> Cliente
@@ -596,6 +638,76 @@ export default function QuotesPage() {
 
               <div><Label>Observações</Label><Textarea value={scheduleForm.observations} onChange={e => setScheduleForm({...scheduleForm, observations: e.target.value})} /></div>
               <Button onClick={confirmSchedule} className="w-full rounded-full gap-2"><CalendarPlus className="h-4 w-4" /> Confirmar Agendamento</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Quote Dialog */}
+      <Dialog open={editQuoteOpen} onOpenChange={o => { setEditQuoteOpen(o); if (!o) setEditingQuote(null); }}>
+        <DialogContent className="max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Editar Orçamento #{editingQuote?.number}</DialogTitle></DialogHeader>
+          {editingQuote && (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Serviços</Label>
+                {editQuoteForm.services.map(s => (
+                  <div key={s.id} className="rounded-lg bg-accent/50 p-3 space-y-2">
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <span className="text-xs text-muted-foreground">Serviço</span>
+                        <Input value={s.name} onChange={e => updateEditService(s.id, "name", e.target.value)} className="h-9" />
+                      </div>
+                      <div className="w-16">
+                        <span className="text-xs text-muted-foreground">Qtd</span>
+                        <Input type="number" min={1} value={s.quantity} onChange={e => updateEditService(s.id, "quantity", parseInt(e.target.value) || 1)} className="h-9" />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-xs text-muted-foreground">Valor (R$)</span>
+                        <Input type="number" min={0} step="0.01" value={s.unitPrice || ""} onChange={e => updateEditService(s.id, "unitPrice", Math.max(0, parseFloat(e.target.value) || 0))} className="h-9" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Desconto</Label>
+                  <Select value={editQuoteForm.discountType} onValueChange={v => setEditQuoteForm({ ...editQuoteForm, discountType: v as any })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percent">Percentual (%)</SelectItem>
+                      <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Valor</Label>
+                  <Input type="number" min={0} step="0.01" value={editQuoteForm.discountValue || ""} onChange={e => setEditQuoteForm({ ...editQuoteForm, discountValue: parseFloat(e.target.value) || 0 })} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Prazo</Label><Input value={editQuoteForm.executionDeadline} onChange={e => setEditQuoteForm({ ...editQuoteForm, executionDeadline: e.target.value })} /></div>
+                <div><Label>Validade (dias)</Label><Input type="number" min={1} value={editQuoteForm.validityDays} onChange={e => setEditQuoteForm({ ...editQuoteForm, validityDays: parseInt(e.target.value) || 5 })} /></div>
+              </div>
+
+              <div>
+                <Label>Pagamento</Label>
+                <Select value={editQuoteForm.paymentMethod} onValueChange={v => setEditQuoteForm({ ...editQuoteForm, paymentMethod: v as any })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pix">Pix</SelectItem>
+                    <SelectItem value="cartao">Cartão</SelectItem>
+                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                    <SelectItem value="parcelado">Parcelado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div><Label>Observações</Label><Textarea value={editQuoteForm.observations} onChange={e => setEditQuoteForm({ ...editQuoteForm, observations: e.target.value })} /></div>
+              <Button onClick={saveEditQuote} className="w-full rounded-full">Salvar Alterações</Button>
             </div>
           )}
         </DialogContent>
