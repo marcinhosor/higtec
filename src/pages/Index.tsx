@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle, Clock } from "lucide-react";
+import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle, Clock, BarChart3 } from "lucide-react";
 import { getLowStockProducts, Product, db, Client } from "@/lib/storage";
 import { updateLastActive } from "@/lib/analytics";
 import logo from "@/assets/logo_app.png";
@@ -14,6 +14,7 @@ const menuItems = [
   { path: "/calculadora", icon: Calculator, label: "Calculadora de Diluição", desc: "Calcule dosagens" },
   { path: "/produtos", icon: Package, label: "Produtos", desc: "Cadastro de produtos" },
   { path: "/relatorios", icon: FileText, label: "Relatórios", desc: "Gerar relatórios PDF" },
+  { path: "/painel", icon: BarChart3, label: "Painel Estratégico", desc: "Visão executiva (PREMIUM)" },
   { path: "/configuracoes", icon: Settings, label: "Configurações", desc: "Dados e backup" },
 ];
 
