@@ -52,7 +52,10 @@ export default function ProductsPage() {
   const [open, setOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState<string | null>(null);
   const [restockForm, setRestockForm] = useState({ volume: "", price: "" });
-  const [isPro, setIsPro] = useState(false);
+  const [isPro, setIsPro] = useState(() => {
+    const t = db.getCompany().planTier;
+    return t === 'pro' || t === 'premium';
+  });
   const [mfgOpen, setMfgOpen] = useState(false);
   const [mfgSearch, setMfgSearch] = useState("");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -62,7 +65,8 @@ export default function ProductsPage() {
   const reload = () => {
     setProducts(db.getProducts());
     setManufacturers(db.getManufacturers());
-    setIsPro(db.getCompany().isPro);
+    const t = db.getCompany().planTier;
+    setIsPro(t === 'pro' || t === 'premium');
   };
 
   useEffect(() => {

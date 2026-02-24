@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileText, Share2, Download, Lock, BarChart3, MapPin, Users, Package, DollarSign, Route, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { generateServiceReportPDF } from "@/lib/pdf-quote";
+import ProUpgradeModal from "@/components/ProUpgradeModal";
+import { useProGate } from "@/hooks/use-pro-gate";
 
 type TabType = 'management' | 'report' | 'neighborhood' | 'clientMap';
 
@@ -19,8 +21,9 @@ export default function ReportsPage() {
   const [appointments] = useState(() => db.getAppointments());
   const [quotes] = useState(() => db.getQuotes());
   const [executions] = useState(() => db.getExecutions());
-  const isPro = useMemo(() => db.getCompany().isPro, []);
   const company = useMemo(() => db.getCompany(), []);
+  const isPro = company.planTier === 'pro' || company.planTier === 'premium';
+  const { showModal, setShowModal, blockedFeature, requiredTier } = useProGate();
 
   const [tab, setTab] = useState<TabType>('management');
 
@@ -358,6 +361,7 @@ ${company.name} - Higienização Profissional
 
         {/* ===== MANAGEMENT TAB ===== */}
         {tab === 'management' && (
+          isPro ? (
           <div className="space-y-3 animate-fade-in">
             {/* Filter bar */}
             <div className="rounded-xl bg-card p-4 shadow-card space-y-3">
@@ -582,6 +586,16 @@ ${company.name} - Higienização Profissional
               </div>
             )}
           </div>
+          ) : (
+            <div className="text-center py-12 space-y-4 animate-fade-in">
+              <Lock className="mx-auto h-12 w-12 text-muted-foreground/30" />
+              <h3 className="text-lg font-bold text-foreground">Relatórios Gerenciais</h3>
+              <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                Acesse relatórios avançados por mês, cliente, serviço e produto com o plano PRO.
+              </p>
+              <Button onClick={() => setShowModal(true)} className="rounded-full">Desbloquear com PRO</Button>
+            </div>
+          )
         )}
 
         {/* ===== REPORT TAB (existing) ===== */}
@@ -814,6 +828,7 @@ ${company.name} - Higienização Profissional
           </div>
         )}
       </div>
+      <ProUpgradeModal open={showModal} onOpenChange={setShowModal} feature={blockedFeature} requiredTier={requiredTier} />
     </PageShell>
   );
 }
