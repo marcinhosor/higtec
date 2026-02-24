@@ -31,6 +31,7 @@ export default function SettingsPage() {
 
   const [collaborators, setCollaborators] = useState<Collaborator[]>(() => db.getCollaborators());
   const [collabOpen, setCollabOpen] = useState(false);
+  const [editingCollab, setEditingCollab] = useState<Collaborator | null>(null);
   const [collabForm, setCollabForm] = useState({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
 
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(() => db.getServiceTypes());
@@ -87,6 +88,19 @@ export default function SettingsPage() {
 
   const saveCollaborator = () => {
     if (!collabForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    if (editingCollab) {
+      const updated = collaborators.map(c => c.id === editingCollab.id ? {
+        ...c, name: collabForm.name, role: collabForm.role, phone: collabForm.phone,
+        cpf: collabForm.cpf, admissionDate: collabForm.admissionDate, signature: collabForm.signature,
+      } : c);
+      db.saveCollaborators(updated);
+      setCollaborators(updated);
+      setCollabOpen(false);
+      setEditingCollab(null);
+      setCollabForm({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
+      toast.success("Colaborador atualizado!");
+      return;
+    }
     const collab: Collaborator = {
       id: generateId(), name: collabForm.name, role: collabForm.role, phone: collabForm.phone,
       cpf: collabForm.cpf, admissionDate: collabForm.admissionDate, status: 'ativo',
@@ -264,12 +278,12 @@ export default function SettingsPage() {
               </div>
               <h2 className="font-semibold text-foreground">Colaboradores</h2>
             </div>
-            <Dialog open={collabOpen} onOpenChange={setCollabOpen}>
+            <Dialog open={collabOpen} onOpenChange={o => { setCollabOpen(o); if (!o) { setEditingCollab(null); setCollabForm({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" }); } }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
               </DialogTrigger>
               <DialogContent className="max-w-md mx-4 max-h-[85vh] overflow-y-auto">
-                <DialogHeader><DialogTitle>Novo Colaborador</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>{editingCollab ? "Editar Colaborador" : "Novo Colaborador"}</DialogTitle></DialogHeader>
                 <div className="space-y-3">
                   <div><Label>Nome Completo *</Label><Input value={collabForm.name} onChange={e => setCollabForm({...collabForm, name: e.target.value})} /></div>
                   <div><Label>Cargo</Label><Input value={collabForm.role} onChange={e => setCollabForm({...collabForm, role: e.target.value})} placeholder="Técnico, Auxiliar..." /></div>
@@ -299,12 +313,19 @@ export default function SettingsPage() {
           ) : (
             <div className="space-y-2">
               {collaborators.map(c => (
-                <div key={c.id} className={`rounded-lg border p-3 flex items-center justify-between ${c.status === 'inativo' ? 'opacity-50' : ''}`}>
+              <div key={c.id} className={`rounded-lg border p-3 flex items-center justify-between ${c.status === 'inativo' ? 'opacity-50' : ''}`}>
                   <div>
                     <p className="font-medium text-foreground text-sm">{c.name}</p>
-                    <p className="text-xs text-muted-foreground">{c.role || "Sem cargo"} • {c.status === 'ativo' ? '✅ Ativo' : '⛔ Inativo'}</p>
+                    <p className="text-xs text-muted-foreground">{c.role || "Sem cargo"} {c.phone && `• ${c.phone}`} • {c.status === 'ativo' ? '✅ Ativo' : '⛔ Inativo'}</p>
                   </div>
                   <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
+                      setCollabForm({ name: c.name, role: c.role, phone: c.phone, cpf: c.cpf, admissionDate: c.admissionDate, signature: c.signature });
+                      setEditingCollab(c);
+                      setCollabOpen(true);
+                    }}>
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleCollabStatus(c.id)} title={c.status === 'ativo' ? 'Desativar' : 'Ativar'}>
                       {c.status === 'ativo' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
                     </Button>
@@ -428,9 +449,9 @@ export default function SettingsPage() {
           {/* List */}
           <div className="space-y-1.5">
             {serviceTypes.sort((a, b) => a.order - b.order).map(st => (
-              <div key={st.id} className="flex items-center justify-between rounded-lg border p-2.5 text-sm">
+              <div key={st.id} className={`flex items-center justify-between rounded-lg border p-2.5 text-sm ${!st.isActive ? 'opacity-50' : ''}`}>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-foreground truncate">{st.name}</p>
+                  <p className="font-medium text-foreground truncate">{st.name} {!st.isActive && <span className="text-xs text-muted-foreground">(inativo)</span>}</p>
                   <p className="text-xs text-muted-foreground">
                     {st.defaultPrice > 0 ? `R$ ${st.defaultPrice.toFixed(2)}` : 'Sem valor padrão'}
                     {st.avgExecutionMinutes > 0 && ` • ${st.avgExecutionMinutes}min`}
@@ -444,6 +465,13 @@ export default function SettingsPage() {
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, 1)}><ArrowDown className="h-3 w-3" /></Button>
                     </>
                   )}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                    const updated = serviceTypes.map(s => s.id === st.id ? { ...s, isActive: !s.isActive } : s);
+                    db.saveServiceTypes(updated);
+                    setServiceTypes(updated);
+                  }} title={st.isActive ? 'Desativar' : 'Ativar'}>
+                    {st.isActive ? <UserX className="h-3 w-3 text-warning" /> : <UserCheck className="h-3 w-3 text-success" />}
+                  </Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditST(st)}><Pencil className="h-3 w-3" /></Button>
                   {company.isPro && st.isCustom && (
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeServiceType(st.id)}><Trash2 className="h-3 w-3" /></Button>

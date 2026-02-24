@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import PageShell from "@/components/PageShell";
 import { db, Product, Manufacturer, generateId, getPhSuggestion, calculateStockStatus, restockProduct } from "@/lib/storage";
-import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign, PackagePlus, AlertTriangle, Package, Check, ChevronsUpDown, Factory } from "lucide-react";
+import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign, PackagePlus, AlertTriangle, Package, Check, ChevronsUpDown, Factory, Edit } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -55,10 +55,9 @@ export default function ProductsPage() {
   const [isPro, setIsPro] = useState(false);
   const [mfgOpen, setMfgOpen] = useState(false);
   const [mfgSearch, setMfgSearch] = useState("");
-  const [form, setForm] = useState({
-    name: "", manufacturer: "", purchaseDate: "", type: "", ph: "",
-    pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "",
-  });
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const emptyForm = { name: "", manufacturer: "", purchaseDate: "", type: "", ph: "", pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "" };
+  const [form, setForm] = useState(emptyForm);
 
   const reload = () => {
     setProducts(db.getProducts());
@@ -99,37 +98,59 @@ export default function ProductsPage() {
     toast.success(`Fabricante "${name}" adicionado!`);
   };
 
+  const openEditProduct = (p: Product) => {
+    setEditingProduct(p);
+    setForm({
+      name: p.name, manufacturer: p.manufacturer, purchaseDate: p.purchaseDate, type: p.type,
+      ph: p.ph !== null ? String(p.ph) : "", pricePaid: p.pricePaid !== null ? String(p.pricePaid) : "",
+      volumeLiters: p.volumeLiters !== null ? String(p.volumeLiters) : "",
+      paymentMethod: p.paymentMethod || "", minAlertVolume: p.minAlertVolume !== null ? String(p.minAlertVolume) : "",
+    });
+    setOpen(true);
+  };
+
   const save = () => {
     if (!form.name.trim()) { toast.error("Nome é obrigatório"); return; }
-    // Persist manufacturer to the list
-    if (form.manufacturer.trim()) {
-      db.addManufacturer(form.manufacturer.trim());
-    }
+    if (form.manufacturer.trim()) db.addManufacturer(form.manufacturer.trim());
     const vol = isPro && form.volumeLiters ? parseFloat(form.volumeLiters) : null;
+
+    if (editingProduct) {
+      const updated = products.map(p => p.id === editingProduct.id ? {
+        ...p,
+        name: form.name, manufacturer: form.manufacturer, purchaseDate: form.purchaseDate,
+        type: form.type, ph: form.ph ? parseFloat(form.ph) : null,
+        pricePaid: isPro && form.pricePaid ? parseFloat(form.pricePaid) : p.pricePaid,
+        paymentMethod: isPro ? (form.paymentMethod as Product["paymentMethod"]) : p.paymentMethod,
+        volumeLiters: vol ?? p.volumeLiters,
+        minAlertVolume: isPro && form.minAlertVolume ? parseFloat(form.minAlertVolume) : p.minAlertVolume,
+        stockStatus: calculateStockStatus(p),
+      } : p);
+      db.saveProducts(updated);
+      setProducts(updated);
+      setEditingProduct(null);
+      setOpen(false);
+      setForm(emptyForm);
+      setManufacturers(db.getManufacturers());
+      toast.success("Produto atualizado!");
+      return;
+    }
+
     const product: Product = {
       id: generateId(),
-      name: form.name,
-      manufacturer: form.manufacturer,
-      purchaseDate: form.purchaseDate,
-      type: form.type,
-      ph: form.ph ? parseFloat(form.ph) : null,
+      name: form.name, manufacturer: form.manufacturer, purchaseDate: form.purchaseDate,
+      type: form.type, ph: form.ph ? parseFloat(form.ph) : null,
       pricePaid: isPro && form.pricePaid ? parseFloat(form.pricePaid) : null,
       paymentMethod: isPro ? (form.paymentMethod as Product["paymentMethod"]) : "",
-      volumeLiters: vol,
-      initialVolume: vol,
-      availableVolume: vol,
+      volumeLiters: vol, initialVolume: vol, availableVolume: vol,
       minAlertVolume: isPro && form.minAlertVolume ? parseFloat(form.minAlertVolume) : null,
-      stockStatus: "normal",
-      consumptionHistory: [],
-      consumptionPerService: null,
-      costPerService: null,
-      profitMargin: null,
+      stockStatus: "normal", consumptionHistory: [],
+      consumptionPerService: null, costPerService: null, profitMargin: null,
     };
     const updated = [...products, product];
     db.saveProducts(updated);
     setProducts(updated);
     setOpen(false);
-    setForm({ name: "", manufacturer: "", purchaseDate: "", type: "", ph: "", pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "" });
+    setForm(emptyForm);
     setManufacturers(db.getManufacturers());
     toast.success("Produto cadastrado!");
   };
@@ -163,12 +184,12 @@ export default function ProductsPage() {
       title="Produtos"
       showBack
       action={
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={o => { setOpen(o); if (!o) { setEditingProduct(null); setForm(emptyForm); } }}>
           <DialogTrigger asChild>
             <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
           </DialogTrigger>
           <DialogContent className="max-w-md mx-4 max-h-[85vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>Novo Produto</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editingProduct ? "Editar Produto" : "Novo Produto"}</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div><Label>Nome *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
               <div>
@@ -388,7 +409,10 @@ export default function ProductsPage() {
                       </div>
                     )}
                   </div>
-                  <button onClick={() => remove(p.id)} className="rounded-lg p-2 text-destructive hover:bg-destructive/10 ml-2"><Trash2 className="h-4 w-4" /></button>
+                  <div className="flex flex-col gap-1 ml-2">
+                    <button onClick={() => openEditProduct(p)} className="rounded-lg p-2 text-muted-foreground hover:bg-accent"><Edit className="h-4 w-4" /></button>
+                    <button onClick={() => remove(p.id)} className="rounded-lg p-2 text-destructive hover:bg-destructive/10"><Trash2 className="h-4 w-4" /></button>
+                  </div>
                 </div>
               </div>
             );
