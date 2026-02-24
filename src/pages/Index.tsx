@@ -31,14 +31,24 @@ function getMaintenanceAlerts(): MaintenanceAlert[] {
 
   clients.forEach(client => {
     const history = client.serviceHistory || [];
-    if (history.length === 0) return;
+    let referenceDate: string;
 
-    const lastService = history.reduce((latest, s) => {
-      const d = new Date(s.date);
-      return d > new Date(latest.date) ? s : latest;
-    }, history[0]);
+    if (history.length > 0) {
+      const lastService = history.reduce((latest, s) => {
+        const d = new Date(s.date);
+        return d > new Date(latest.date) ? s : latest;
+      }, history[0]);
+      referenceDate = lastService.date;
+    } else {
+      // No service history — use client creation date as reference
+      referenceDate = client.createdAt;
+    }
 
-    const lastDate = new Date(lastService.date);
+    if (!referenceDate) return;
+
+    const lastDate = new Date(referenceDate);
+    if (isNaN(lastDate.getTime())) return;
+
     const diffMs = now.getTime() - lastDate.getTime();
     const months = diffMs / (1000 * 60 * 60 * 24 * 30.44);
 
@@ -51,7 +61,7 @@ function getMaintenanceAlerts(): MaintenanceAlert[] {
       alerts.push({
         client,
         monthsSinceLastService: Math.floor(months),
-        lastServiceDate: lastService.date,
+        lastServiceDate: referenceDate,
         level,
       });
     }
