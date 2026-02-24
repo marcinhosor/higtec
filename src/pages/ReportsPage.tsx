@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Share2, Download, Lock, BarChart3, MapPin, Users, Package, DollarSign, Route, ClipboardList } from "lucide-react";
+import { FileText, Share2, Download, Lock, BarChart3, MapPin, Users, Package, DollarSign, Route, ClipboardList, Wrench, TrendingUp, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { generateServiceReportPDF } from "@/lib/pdf-quote";
 import ProUpgradeModal from "@/components/ProUpgradeModal";
@@ -34,7 +34,7 @@ export default function ReportsPage() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [mgmtSection, setMgmtSection] = useState<'clients' | 'products' | 'expenses' | 'routes'>('clients');
+  const [mgmtSection, setMgmtSection] = useState<'monthly' | 'clients' | 'services' | 'products' | 'expenses' | 'routes'>('monthly');
 
   // Generate month options (last 12 months)
   const monthOptions = useMemo(() => {
@@ -83,34 +83,77 @@ export default function ReportsPage() {
     return qs;
   }, [quotes, mgmtFilter, mgmtClientId, mgmtMonth]);
 
-  // Clients summary
+  // Helper: get revenue from a quote
+  const quoteRevenue = (q: Quote) => {
+    const total = q.services.reduce((s, sv) => s + sv.quantity * sv.unitPrice, 0);
+    const disc = q.discountType === 'percent' ? total * (q.discountValue / 100) : q.discountValue;
+    return Math.max(0, total - disc);
+  };
+
+  // Clients summary (with frequency)
   const clientsSummary = useMemo(() => {
-    const clientMap = new Map<string, { name: string; services: number; totalSpent: number; lastService: string }>();
+    const clientMap = new Map<string, { name: string; services: number; totalSpent: number; lastService: string; firstService: string }>();
     
     filteredExecutions.forEach(e => {
-      const entry = clientMap.get(e.clientId) || { name: e.clientName, services: 0, totalSpent: 0, lastService: '' };
+      const entry = clientMap.get(e.clientId) || { name: e.clientName, services: 0, totalSpent: 0, lastService: '', firstService: '' };
       entry.services++;
       entry.totalSpent += e.totalCost || 0;
       const date = e.endTime || e.startTime || e.createdAt;
       if (!entry.lastService || date > entry.lastService) entry.lastService = date;
+      if (!entry.firstService || date < entry.firstService) entry.firstService = date;
       clientMap.set(e.clientId, entry);
     });
 
-    // Also check quotes for revenue
     filteredQuotes.filter(q => q.status === 'aprovado').forEach(q => {
-      const entry = clientMap.get(q.clientId) || { name: q.clientName, services: 0, totalSpent: 0, lastService: '' };
-      const total = q.services.reduce((s, sv) => s + sv.quantity * sv.unitPrice, 0);
-      const disc = q.discountType === 'percent' ? total * (q.discountValue / 100) : q.discountValue;
-      entry.totalSpent += Math.max(0, total - disc);
+      const entry = clientMap.get(q.clientId) || { name: q.clientName, services: 0, totalSpent: 0, lastService: '', firstService: '' };
+      entry.totalSpent += quoteRevenue(q);
       clientMap.set(q.clientId, entry);
     });
 
     return Array.from(clientMap.entries())
-      .map(([id, data]) => ({ id, ...data }))
+      .map(([id, data]) => {
+        let avgFrequencyDays: number | null = null;
+        if (data.services > 1 && data.firstService && data.lastService) {
+          const diff = new Date(data.lastService).getTime() - new Date(data.firstService).getTime();
+          avgFrequencyDays = Math.round(diff / (1000 * 60 * 60 * 24) / (data.services - 1));
+        }
+        return { id, ...data, avgFrequencyDays };
+      })
       .sort((a, b) => b.services - a.services);
   }, [filteredExecutions, filteredQuotes]);
 
-  // Products summary  
+  // Services summary (by service type)
+  const servicesSummary = useMemo(() => {
+    const svcMap = new Map<string, { name: string; count: number; totalRevenue: number; totalCost: number; totalMinutes: number }>();
+
+    filteredExecutions.forEach(e => {
+      const entry = svcMap.get(e.serviceType) || { name: e.serviceType, count: 0, totalRevenue: 0, totalCost: 0, totalMinutes: 0 };
+      entry.count++;
+      entry.totalCost += e.totalCost || 0;
+      entry.totalMinutes += e.totalMinutes || 0;
+      svcMap.set(e.serviceType, entry);
+    });
+
+    filteredQuotes.filter(q => q.status === 'aprovado').forEach(q => {
+      q.services.forEach(sv => {
+        const svcName = sv.name || 'Outros';
+        const entry = svcMap.get(svcName) || { name: svcName, count: 0, totalRevenue: 0, totalCost: 0, totalMinutes: 0 };
+        entry.totalRevenue += sv.quantity * sv.unitPrice;
+        svcMap.set(svcName, entry);
+      });
+    });
+
+    return Array.from(svcMap.values())
+      .map(s => ({
+        ...s,
+        avgCost: s.count > 0 ? s.totalCost / s.count : 0,
+        avgMinutes: s.count > 0 ? s.totalMinutes / s.count : 0,
+        avgMargin: s.totalRevenue > 0 && s.totalCost > 0 ? ((s.totalRevenue - s.totalCost) / s.totalRevenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [filteredExecutions, filteredQuotes]);
+
+  // Products summary (enhanced with costs)
   const productsSummary = useMemo(() => {
     const prodMap = new Map<string, { name: string; timesUsed: number; totalVolumeMl: number }>();
     
@@ -124,28 +167,31 @@ export default function ReportsPage() {
     });
 
     return Array.from(prodMap.entries())
-      .map(([id, data]) => ({ id, ...data }))
+      .map(([id, data]) => {
+        const product = products.find(pr => pr.id === id);
+        const costPerLiter = product?.pricePaid && product?.volumeLiters ? product.pricePaid / product.volumeLiters : 0;
+        const totalCost = costPerLiter * (data.totalVolumeMl / 1000);
+        const costPerService = data.timesUsed > 0 ? totalCost / data.timesUsed : 0;
+        return { id, ...data, costPerLiter, totalCost, costPerService, currentStock: product?.availableVolume ?? null, stockStatus: product?.stockStatus ?? 'normal' };
+      })
       .sort((a, b) => b.timesUsed - a.timesUsed);
-  }, [filteredExecutions]);
+  }, [filteredExecutions, products]);
 
-  // Expenses summary
+  // Monthly summary (enhanced with ticket médio and margin)
   const expensesSummary = useMemo(() => {
     const totalServices = filteredExecutions.length;
     const totalCost = filteredExecutions.reduce((s, e) => s + (e.totalCost || 0), 0);
     const totalMinutes = filteredExecutions.reduce((s, e) => s + (e.totalMinutes || 0), 0);
     
     const approvedQuotes = filteredQuotes.filter(q => q.status === 'aprovado');
-    const totalRevenue = approvedQuotes.reduce((s, q) => {
-      const total = q.services.reduce((ss, sv) => ss + sv.quantity * sv.unitPrice, 0);
-      const disc = q.discountType === 'percent' ? total * (q.discountValue / 100) : q.discountValue;
-      return s + Math.max(0, total - disc);
-    }, 0);
+    const totalRevenue = approvedQuotes.reduce((s, q) => s + quoteRevenue(q), 0);
+    const totalProductCost = productsSummary.reduce((s, p) => s + p.totalCost, 0);
+    const ticketMedio = totalServices > 0 ? totalRevenue / totalServices : 0;
+    const marginPercent = totalRevenue > 0 ? ((totalRevenue - totalProductCost) / totalRevenue) * 100 : 0;
+    const topService = servicesSummary.length > 0 ? servicesSummary[0].name : '-';
 
-    // Product costs from products table
-    const totalProductCost = products.reduce((s, p) => s + (p.pricePaid || 0), 0);
-
-    return { totalServices, totalCost, totalMinutes, totalRevenue, totalProductCost, approvedQuotes: approvedQuotes.length };
-  }, [filteredExecutions, filteredQuotes, products]);
+    return { totalServices, totalCost, totalMinutes, totalRevenue, totalProductCost, approvedQuotes: approvedQuotes.length, ticketMedio, marginPercent, topService };
+  }, [filteredExecutions, filteredQuotes, productsSummary, servicesSummary]);
 
   // Routes / distances — based on client addresses grouped by region
   const routesSummary = useMemo(() => {
@@ -407,11 +453,13 @@ ${company.name} - Higienização Profissional
             </div>
 
             {/* Section selector */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {[
+                { key: 'monthly' as const, icon: BarChart3, label: 'Mensal' },
                 { key: 'clients' as const, icon: Users, label: 'Clientes' },
+                { key: 'services' as const, icon: Wrench, label: 'Serviços' },
                 { key: 'products' as const, icon: Package, label: 'Produtos' },
-                { key: 'expenses' as const, icon: DollarSign, label: 'Gastos' },
+                { key: 'expenses' as const, icon: DollarSign, label: 'Financeiro' },
                 { key: 'routes' as const, icon: Route, label: 'Rotas' },
               ].map(s => (
                 <button
@@ -429,11 +477,72 @@ ${company.name} - Higienização Profissional
               ))}
             </div>
 
+            {/* ==== MONTHLY SECTION ==== */}
+            {mgmtSection === 'monthly' && (
+              <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
+                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-primary" /> Relatório Mensal
+                </h3>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-accent p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">Total de Serviços</p>
+                    <p className="text-lg font-bold text-foreground">{expensesSummary.totalServices}</p>
+                  </div>
+                  <div className="rounded-lg bg-primary/10 p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">Faturamento Bruto</p>
+                    <p className="text-lg font-bold text-primary">R$ {expensesSummary.totalRevenue.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-lg bg-destructive/10 p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">Custo Produtos</p>
+                    <p className="text-lg font-bold text-destructive">R$ {expensesSummary.totalProductCost.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-lg bg-accent p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">Margem Média</p>
+                    <p className={`text-lg font-bold ${expensesSummary.marginPercent >= 0 ? 'text-green-600' : 'text-destructive'}`}>
+                      {expensesSummary.marginPercent.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-[10px] text-muted-foreground">Ticket Médio</p>
+                    <p className="text-sm font-bold text-foreground">R$ {expensesSummary.ticketMedio.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-[10px] text-muted-foreground">Serviço + Vendido</p>
+                    <p className="text-sm font-bold text-foreground truncate">{expensesSummary.topService}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-[10px] text-muted-foreground">Tempo Total</p>
+                    <p className="text-sm font-bold text-foreground">{formatMinutes(expensesSummary.totalMinutes)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-[10px] text-muted-foreground">Orçamentos Aprovados</p>
+                    <p className="text-sm font-bold text-foreground">{expensesSummary.approvedQuotes}</p>
+                  </div>
+                </div>
+
+                {expensesSummary.totalRevenue > 0 && (
+                  <div className="rounded-lg bg-accent p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">Lucro Estimado</p>
+                    <p className={`text-xl font-bold ${(expensesSummary.totalRevenue - expensesSummary.totalProductCost) >= 0 ? 'text-green-600' : 'text-destructive'}`}>
+                      R$ {(expensesSummary.totalRevenue - expensesSummary.totalProductCost).toFixed(2)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ==== CLIENTS SECTION ==== */}
             {mgmtSection === 'clients' && (
-              <div className="rounded-xl bg-card p-4 shadow-card space-y-3">
+              <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
                 <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary" /> Lista de Clientes
+                  <Users className="h-4 w-4 text-primary" /> Relatório por Cliente
                   <span className="ml-auto text-xs text-muted-foreground">{clientsSummary.length} cliente(s)</span>
                 </h3>
                 
@@ -447,12 +556,56 @@ ${company.name} - Higienização Profissional
                           <span className="font-medium text-foreground text-sm">{c.name}</span>
                           <span className="text-xs font-bold text-primary">{c.services} serviço(s)</span>
                         </div>
-                        {c.totalSpent > 0 && (
-                          <p className="text-xs text-muted-foreground">Faturamento: <span className="font-medium text-foreground">R$ {c.totalSpent.toFixed(2)}</span></p>
-                        )}
+                        <div className="grid grid-cols-2 gap-x-4 text-xs text-muted-foreground">
+                          {c.totalSpent > 0 && (
+                            <span>Faturado: <span className="font-medium text-foreground">R$ {c.totalSpent.toFixed(2)}</span></span>
+                          )}
+                          {c.avgFrequencyDays != null && (
+                            <span>Frequência: <span className="font-medium text-foreground">a cada {c.avgFrequencyDays}d</span></span>
+                          )}
+                        </div>
                         {c.lastService && (
-                          <p className="text-xs text-muted-foreground">Último serviço: {new Date(c.lastService).toLocaleDateString('pt-BR')}</p>
+                          <p className="text-xs text-muted-foreground">Último: {new Date(c.lastService).toLocaleDateString('pt-BR')}</p>
                         )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ==== SERVICES SECTION ==== */}
+            {mgmtSection === 'services' && (
+              <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
+                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-primary" /> Relatório por Serviço
+                  <span className="ml-auto text-xs text-muted-foreground">{servicesSummary.length} tipo(s)</span>
+                </h3>
+
+                {servicesSummary.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">Nenhum serviço registrado no período</p>
+                ) : (
+                  <div className="space-y-2">
+                    {servicesSummary.map((s, i) => (
+                      <div key={s.name} className={`rounded-lg border p-3 space-y-1 ${i === 0 ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-foreground text-sm">{s.name}</span>
+                          <span className="text-xs font-bold text-primary">{s.count}x</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 text-xs text-muted-foreground">
+                          {s.totalRevenue > 0 && (
+                            <span>Receita: <span className="font-medium text-foreground">R$ {s.totalRevenue.toFixed(2)}</span></span>
+                          )}
+                          {s.avgCost > 0 && (
+                            <span>Custo médio: <span className="font-medium text-foreground">R$ {s.avgCost.toFixed(2)}</span></span>
+                          )}
+                          {s.avgMinutes > 0 && (
+                            <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> Tempo médio: <span className="font-medium text-foreground">{formatMinutes(s.avgMinutes)}</span></span>
+                          )}
+                          {s.avgMargin > 0 && (
+                            <span className="flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Margem: <span className="font-medium text-green-600">{s.avgMargin.toFixed(1)}%</span></span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -462,9 +615,9 @@ ${company.name} - Higienização Profissional
 
             {/* ==== PRODUCTS SECTION ==== */}
             {mgmtSection === 'products' && (
-              <div className="rounded-xl bg-card p-4 shadow-card space-y-3">
+              <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
                 <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <Package className="h-4 w-4 text-primary" /> Produtos Utilizados
+                  <Package className="h-4 w-4 text-primary" /> Relatório por Produto
                   <span className="ml-auto text-xs text-muted-foreground">{productsSummary.length} produto(s)</span>
                 </h3>
                 
@@ -472,36 +625,36 @@ ${company.name} - Higienização Profissional
                   <p className="text-sm text-muted-foreground text-center py-4">Nenhum produto registrado no período</p>
                 ) : (
                   <div className="space-y-2">
-                    {productsSummary.map(p => {
-                      const product = products.find(pr => pr.id === p.id);
-                      return (
-                        <div key={p.id} className="rounded-lg border border-border p-3 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-foreground text-sm">{p.name}</span>
-                            <span className="text-xs font-bold text-primary">{p.timesUsed}x usado</span>
-                          </div>
-                          <div className="flex gap-3 text-xs text-muted-foreground">
-                            <span>Volume: {(p.totalVolumeMl / 1000).toFixed(2)}L</span>
-                            {product?.availableVolume != null && (
-                              <span className={product.stockStatus === 'critico' ? 'text-destructive font-medium' : ''}>
-                                Estoque: {product.availableVolume.toFixed(2)}L
-                              </span>
-                            )}
-                          </div>
-                          {product?.pricePaid != null && product.pricePaid > 0 && (
-                            <p className="text-xs text-muted-foreground">Custo: R$ {product.pricePaid.toFixed(2)}</p>
+                    {productsSummary.map(p => (
+                      <div key={p.id} className="rounded-lg border border-border p-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-foreground text-sm">{p.name}</span>
+                          <span className="text-xs font-bold text-primary">{p.timesUsed}x usado</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 text-xs text-muted-foreground">
+                          <span>Volume: {(p.totalVolumeMl / 1000).toFixed(2)}L</span>
+                          {p.totalCost > 0 && (
+                            <span>Custo total: <span className="font-medium text-foreground">R$ {p.totalCost.toFixed(2)}</span></span>
+                          )}
+                          {p.costPerService > 0 && (
+                            <span>Custo/serviço: <span className="font-medium text-foreground">R$ {p.costPerService.toFixed(2)}</span></span>
+                          )}
+                          {p.currentStock != null && (
+                            <span className={p.stockStatus === 'critico' ? 'text-destructive font-medium' : ''}>
+                              Estoque: {p.currentStock.toFixed(2)}L
+                            </span>
                           )}
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             )}
 
-            {/* ==== EXPENSES SECTION ==== */}
+            {/* ==== EXPENSES / FINANCIAL SECTION ==== */}
             {mgmtSection === 'expenses' && (
-              <div className="rounded-xl bg-card p-4 shadow-card space-y-3">
+              <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
                 <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
                   <DollarSign className="h-4 w-4 text-primary" /> Resumo Financeiro
                 </h3>
@@ -532,7 +685,7 @@ ${company.name} - Higienização Profissional
                   </div>
                 </div>
 
-                {expensesSummary.totalRevenue > 0 && expensesSummary.totalProductCost > 0 && (
+                {expensesSummary.totalRevenue > 0 && (
                   <div className="rounded-lg bg-accent p-3 text-center">
                     <p className="text-[10px] text-muted-foreground">Lucro Estimado</p>
                     <p className={`text-lg font-bold ${(expensesSummary.totalRevenue - expensesSummary.totalProductCost) >= 0 ? 'text-green-600' : 'text-destructive'}`}>
@@ -545,7 +698,7 @@ ${company.name} - Higienização Profissional
 
             {/* ==== ROUTES SECTION ==== */}
             {mgmtSection === 'routes' && (
-              <div className="rounded-xl bg-card p-4 shadow-card space-y-3">
+              <div className="rounded-xl bg-card p-4 shadow-card space-y-3 animate-fade-in">
                 <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
                   <Route className="h-4 w-4 text-primary" /> Rotas e Regiões Atendidas
                   <span className="ml-auto text-xs text-muted-foreground">{routesSummary.reduce((s, r) => s + r.count, 0)} cliente(s)</span>
