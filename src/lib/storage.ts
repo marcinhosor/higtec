@@ -31,6 +31,13 @@ export type Appointment = {
   status: 'agendado' | 'concluido';
 };
 
+export type ConsumptionRecord = {
+  id: string;
+  date: string;
+  volumeUsedMl: number;
+  serviceDescription: string;
+};
+
 export type Product = {
   id: string;
   name: string;
@@ -42,6 +49,12 @@ export type Product = {
   pricePaid: number | null;
   paymentMethod: 'pix' | 'debito' | 'credito' | 'dinheiro' | 'boleto' | '';
   volumeLiters: number | null;
+  // Stock control (PRO)
+  initialVolume: number | null;
+  availableVolume: number | null;
+  minAlertVolume: number | null;
+  stockStatus: 'normal' | 'baixo' | 'critico';
+  consumptionHistory: ConsumptionRecord[];
   // Future expansion (PRO)
   consumptionPerService: number | null;
   costPerService: number | null;
@@ -173,4 +186,58 @@ export function getMaintenanceSuggestion(serviceType: string): string {
   if (lower.includes('comercial') || lower.includes('escritório')) return '3 meses';
   if (lower.includes('alto fluxo') || lower.includes('hospital') || lower.includes('clínica')) return '1 a 3 meses';
   return '6 meses';
+}
+
+export function calculateStockStatus(product: Product): Product['stockStatus'] {
+  if (product.availableVolume === null || product.initialVolume === null) return 'normal';
+  if (product.minAlertVolume !== null && product.availableVolume <= product.minAlertVolume) return 'critico';
+  if (product.availableVolume <= product.initialVolume * 0.2) return 'baixo';
+  return 'normal';
+}
+
+export function deductStock(productId: string, volumeUsedMl: number, serviceDescription: string): boolean {
+  const products = db.getProducts();
+  const idx = products.findIndex(p => p.id === productId);
+  if (idx === -1) return false;
+  const p = products[idx];
+  if (p.availableVolume === null) return false;
+  const litersUsed = volumeUsedMl / 1000;
+  const newVolume = Math.max(0, p.availableVolume - litersUsed);
+  p.availableVolume = Math.round(newVolume * 1000) / 1000;
+  p.consumptionHistory = [
+    ...(p.consumptionHistory || []),
+    { id: generateId(), date: new Date().toISOString(), volumeUsedMl, serviceDescription }
+  ];
+  p.stockStatus = calculateStockStatus(p);
+  products[idx] = p;
+  db.saveProducts(products);
+  return true;
+}
+
+export function restockProduct(productId: string, addVolume: number, addPrice: number): boolean {
+  const products = db.getProducts();
+  const idx = products.findIndex(p => p.id === productId);
+  if (idx === -1) return false;
+  const p = products[idx];
+  const oldTotal = (p.pricePaid || 0);
+  const oldVolume = (p.volumeLiters || 0);
+  p.volumeLiters = oldVolume + addVolume;
+  p.pricePaid = oldTotal + addPrice;
+  p.availableVolume = (p.availableVolume || 0) + addVolume;
+  p.initialVolume = (p.initialVolume || 0) + addVolume;
+  p.purchaseDate = new Date().toISOString().split('T')[0];
+  p.stockStatus = calculateStockStatus(p);
+  products[idx] = p;
+  db.saveProducts(products);
+  return true;
+}
+
+export function getLowStockProducts(): Product[] {
+  const company = db.getCompany();
+  if (!company.isPro) return [];
+  return db.getProducts().filter(p => {
+    if (p.availableVolume === null || p.initialVolume === null) return false;
+    const status = calculateStockStatus(p);
+    return status === 'baixo' || status === 'critico';
+  });
 }

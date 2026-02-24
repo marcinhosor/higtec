@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Product, generateId, getPhSuggestion } from "@/lib/storage";
-import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign } from "lucide-react";
+import { db, Product, generateId, getPhSuggestion, calculateStockStatus, restockProduct } from "@/lib/storage";
+import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign, PackagePlus, AlertTriangle, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Progress } from "@/components/ui/progress";
 
 const productTypes = ["Detergente", "Desengraxante", "Neutralizador", "Impermeabilizante", "Sanitizante", "Solvente", "Outro"];
 const paymentMethods = [
@@ -31,22 +32,38 @@ function ProBadge() {
   );
 }
 
+function StockBadge({ status }: { status: Product["stockStatus"] }) {
+  if (status === "normal") return null;
+  const isCritical = status === "critico";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${isCritical ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning"}`}>
+      <AlertTriangle className="h-3 w-3" />
+      {isCritical ? "Crítico" : "Baixo"}
+    </span>
+  );
+}
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [open, setOpen] = useState(false);
+  const [restockOpen, setRestockOpen] = useState<string | null>(null);
+  const [restockForm, setRestockForm] = useState({ volume: "", price: "" });
   const [isPro, setIsPro] = useState(false);
   const [form, setForm] = useState({
     name: "", manufacturer: "", purchaseDate: "", type: "", ph: "",
-    pricePaid: "", volumeLiters: "", paymentMethod: "",
+    pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "",
   });
 
-  useEffect(() => {
+  const reload = () => {
     setProducts(db.getProducts());
     setIsPro(db.getCompany().isPro);
-  }, []);
+  };
+
+  useEffect(() => { reload(); }, []);
 
   const save = () => {
     if (!form.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    const vol = isPro && form.volumeLiters ? parseFloat(form.volumeLiters) : null;
     const product: Product = {
       id: generateId(),
       name: form.name,
@@ -56,7 +73,12 @@ export default function ProductsPage() {
       ph: form.ph ? parseFloat(form.ph) : null,
       pricePaid: isPro && form.pricePaid ? parseFloat(form.pricePaid) : null,
       paymentMethod: isPro ? (form.paymentMethod as Product["paymentMethod"]) : "",
-      volumeLiters: isPro && form.volumeLiters ? parseFloat(form.volumeLiters) : null,
+      volumeLiters: vol,
+      initialVolume: vol,
+      availableVolume: vol,
+      minAlertVolume: isPro && form.minAlertVolume ? parseFloat(form.minAlertVolume) : null,
+      stockStatus: "normal",
+      consumptionHistory: [],
       consumptionPerService: null,
       costPerService: null,
       profitMargin: null,
@@ -65,7 +87,7 @@ export default function ProductsPage() {
     db.saveProducts(updated);
     setProducts(updated);
     setOpen(false);
-    setForm({ name: "", manufacturer: "", purchaseDate: "", type: "", ph: "", pricePaid: "", volumeLiters: "", paymentMethod: "" });
+    setForm({ name: "", manufacturer: "", purchaseDate: "", type: "", ph: "", pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "" });
     toast.success("Produto cadastrado!");
   };
 
@@ -74,6 +96,18 @@ export default function ProductsPage() {
     db.saveProducts(updated);
     setProducts(updated);
     toast.success("Produto removido");
+  };
+
+  const handleRestock = () => {
+    if (!restockOpen) return;
+    const vol = parseFloat(restockForm.volume);
+    const price = parseFloat(restockForm.price);
+    if (!vol || vol <= 0) { toast.error("Informe o volume"); return; }
+    restockProduct(restockOpen, vol, price || 0);
+    reload();
+    setRestockOpen(null);
+    setRestockForm({ volume: "", price: "" });
+    toast.success("Estoque atualizado!");
   };
 
   const phSuggestion = form.ph ? getPhSuggestion(parseFloat(form.ph)) : "";
@@ -139,6 +173,11 @@ export default function ProductsPage() {
                     <Label>Volume Total (litros)</Label>
                     <Input type="number" step="0.1" min="0" value={form.volumeLiters} onChange={e => setForm({...form, volumeLiters: e.target.value})} placeholder="Ex: 5" />
                   </div>
+                  <div>
+                    <Label>Volume Mínimo de Alerta (litros)</Label>
+                    <Input type="number" step="0.1" min="0" value={form.minAlertVolume} onChange={e => setForm({...form, minAlertVolume: e.target.value})} placeholder="Ex: 0.5" />
+                    <p className="text-xs text-muted-foreground mt-1">Alerta crítico quando atingir este volume</p>
+                  </div>
                   {costPerLiter !== null && costPerLiter > 0 && (
                     <div className="rounded-lg bg-primary/10 p-3 text-sm animate-fade-in">
                       <p className="text-muted-foreground text-xs">Custo por litro:</p>
@@ -147,8 +186,9 @@ export default function ProductsPage() {
                   )}
                 </div>
               ) : (
-                <div className="border-t border-border pt-3">
+                <div className="border-t border-border pt-3 space-y-2">
                   <ProBadge />
+                  <p className="text-xs text-muted-foreground">Controle automático de estoque disponível na versão PRO</p>
                 </div>
               )}
 
@@ -158,6 +198,25 @@ export default function ProductsPage() {
         </Dialog>
       }
     >
+      {/* Restock Dialog */}
+      <Dialog open={!!restockOpen} onOpenChange={v => { if (!v) setRestockOpen(null); }}>
+        <DialogContent className="max-w-sm mx-4">
+          <DialogHeader><DialogTitle>Repor Estoque</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Volume Adicionado (litros)</Label>
+              <Input type="number" step="0.1" min="0" value={restockForm.volume} onChange={e => setRestockForm({...restockForm, volume: e.target.value})} placeholder="Ex: 5" />
+            </div>
+            <div>
+              <Label>Valor Pago (R$)</Label>
+              <Input type="number" step="0.01" min="0" value={restockForm.price} onChange={e => setRestockForm({...restockForm, price: e.target.value})} placeholder="0,00" />
+            </div>
+            <p className="text-xs text-muted-foreground">O custo médio por litro será recalculado automaticamente.</p>
+            <Button onClick={handleRestock} className="w-full rounded-full">Confirmar Reposição</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {products.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Beaker className="mx-auto h-12 w-12 mb-2 opacity-40" />
@@ -168,11 +227,19 @@ export default function ProductsPage() {
           {products.map(p => {
             const pCostPerLiter = p.pricePaid && p.volumeLiters ? p.pricePaid / p.volumeLiters : null;
             const pmLabel = paymentMethods.find(m => m.value === p.paymentMethod)?.label;
+            const stockPercent = p.initialVolume && p.availableVolume !== null ? Math.round((p.availableVolume / p.initialVolume) * 100) : null;
+            const currentStatus = calculateStockStatus(p);
+            const isCritical = currentStatus === "critico";
+            const isLow = currentStatus === "baixo";
+
             return (
-              <div key={p.id} className="rounded-xl bg-card p-4 shadow-card animate-fade-in">
+              <div key={p.id} className={`rounded-xl bg-card p-4 shadow-card animate-fade-in ${isCritical ? "border-l-4 border-l-destructive" : isLow ? "border-l-4 border-l-warning" : ""}`}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-foreground">{p.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-foreground">{p.name}</h3>
+                      {isPro && <StockBadge status={currentStatus} />}
+                    </div>
                     {p.manufacturer && <p className="text-sm text-muted-foreground">{p.manufacturer}</p>}
                     <div className="flex gap-2 mt-1 flex-wrap">
                       {p.type && <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{p.type}</span>}
@@ -180,6 +247,33 @@ export default function ProductsPage() {
                     </div>
                     {p.ph !== null && (
                       <p className="text-xs text-muted-foreground mt-2">{getPhSuggestion(p.ph)}</p>
+                    )}
+
+                    {/* PRO stock display */}
+                    {isPro && p.availableVolume !== null && p.initialVolume !== null && (
+                      <div className="mt-3 rounded-lg bg-accent/50 border border-border p-3 space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                          <Package className="h-3.5 w-3.5" /> Estoque
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Disponível</span>
+                          <span className={`font-bold ${isCritical ? "text-destructive" : isLow ? "text-warning" : "text-primary"}`}>
+                            {p.availableVolume.toFixed(2)}L / {p.initialVolume.toFixed(2)}L
+                          </span>
+                        </div>
+                        {stockPercent !== null && (
+                          <Progress value={stockPercent} className={`h-2 ${isCritical ? "[&>div]:bg-destructive" : isLow ? "[&>div]:bg-warning" : ""}`} />
+                        )}
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>{stockPercent}% restante</span>
+                          {p.consumptionHistory && p.consumptionHistory.length > 0 && (
+                            <span>{p.consumptionHistory.length} uso(s)</span>
+                          )}
+                        </div>
+                        <Button size="sm" variant="outline" className="w-full rounded-full gap-1 text-xs mt-1" onClick={() => { setRestockOpen(p.id); setRestockForm({ volume: "", price: "" }); }}>
+                          <PackagePlus className="h-3.5 w-3.5" /> Repor Estoque
+                        </Button>
+                      </div>
                     )}
 
                     {/* PRO financial display */}
@@ -199,7 +293,7 @@ export default function ProductsPage() {
                         )}
                         {p.volumeLiters !== null && (
                           <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Volume</span>
+                            <span className="text-muted-foreground">Volume total</span>
                             <span className="text-foreground">{p.volumeLiters}L</span>
                           </div>
                         )}
