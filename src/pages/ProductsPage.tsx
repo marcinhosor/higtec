@@ -1,14 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Product, generateId, getPhSuggestion, calculateStockStatus, restockProduct } from "@/lib/storage";
-import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign, PackagePlus, AlertTriangle, Package } from "lucide-react";
+import { db, Product, Manufacturer, generateId, getPhSuggestion, calculateStockStatus, restockProduct } from "@/lib/storage";
+import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign, PackagePlus, AlertTriangle, Package, Check, ChevronsUpDown, Factory } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 
 const productTypes = ["Detergente", "Desengraxante", "Neutralizador", "Impermeabilizante", "Sanitizante", "Solvente", "Outro"];
 const paymentMethods = [
@@ -45,10 +48,13 @@ function StockBadge({ status }: { status: Product["stockStatus"] }) {
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
   const [open, setOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState<string | null>(null);
   const [restockForm, setRestockForm] = useState({ volume: "", price: "" });
   const [isPro, setIsPro] = useState(false);
+  const [mfgOpen, setMfgOpen] = useState(false);
+  const [mfgSearch, setMfgSearch] = useState("");
   const [form, setForm] = useState({
     name: "", manufacturer: "", purchaseDate: "", type: "", ph: "",
     pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "",
@@ -56,13 +62,49 @@ export default function ProductsPage() {
 
   const reload = () => {
     setProducts(db.getProducts());
+    setManufacturers(db.getManufacturers());
     setIsPro(db.getCompany().isPro);
   };
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+    // Seed manufacturers from existing products
+    const existingProducts = db.getProducts();
+    existingProducts.forEach(p => {
+      if (p.manufacturer?.trim()) db.addManufacturer(p.manufacturer.trim());
+    });
+    setManufacturers(db.getManufacturers());
+  }, []);
+
+  const filteredManufacturers = useMemo(() => {
+    if (!mfgSearch) return manufacturers;
+    const lower = mfgSearch.toLowerCase();
+    return manufacturers.filter(m => m.name.toLowerCase().includes(lower));
+  }, [manufacturers, mfgSearch]);
+
+  const showAddNew = mfgSearch.trim() && !manufacturers.some(m => m.name.toLowerCase() === mfgSearch.trim().toLowerCase());
+
+  const selectManufacturer = (name: string) => {
+    setForm({ ...form, manufacturer: name });
+    setMfgOpen(false);
+    setMfgSearch("");
+  };
+
+  const addNewManufacturer = () => {
+    const name = mfgSearch.trim();
+    if (!name) return;
+    db.addManufacturer(name);
+    setManufacturers(db.getManufacturers());
+    selectManufacturer(name);
+    toast.success(`Fabricante "${name}" adicionado!`);
+  };
 
   const save = () => {
     if (!form.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    // Persist manufacturer to the list
+    if (form.manufacturer.trim()) {
+      db.addManufacturer(form.manufacturer.trim());
+    }
     const vol = isPro && form.volumeLiters ? parseFloat(form.volumeLiters) : null;
     const product: Product = {
       id: generateId(),
@@ -88,6 +130,7 @@ export default function ProductsPage() {
     setProducts(updated);
     setOpen(false);
     setForm({ name: "", manufacturer: "", purchaseDate: "", type: "", ph: "", pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "" });
+    setManufacturers(db.getManufacturers());
     toast.success("Produto cadastrado!");
   };
 
@@ -128,7 +171,46 @@ export default function ProductsPage() {
             <DialogHeader><DialogTitle>Novo Produto</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div><Label>Nome *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-              <div><Label>Fabricante</Label><Input value={form.manufacturer} onChange={e => setForm({...form, manufacturer: e.target.value})} /></div>
+              <div>
+                <Label>Fabricante</Label>
+                <Popover open={mfgOpen} onOpenChange={setMfgOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" aria-expanded={mfgOpen} className="w-full justify-between font-normal">
+                      {form.manufacturer ? (
+                        <span className="flex items-center gap-2">
+                          <Factory className="h-3.5 w-3.5 text-muted-foreground" />
+                          {form.manufacturer}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Selecione ou digite...</span>
+                      )}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command shouldFilter={false}>
+                      <CommandInput placeholder="Buscar fabricante..." value={mfgSearch} onValueChange={setMfgSearch} />
+                      <CommandList>
+                        <CommandEmpty className="py-2 px-3 text-sm text-muted-foreground">Nenhum fabricante encontrado</CommandEmpty>
+                        <CommandGroup>
+                          {filteredManufacturers.map(m => (
+                            <CommandItem key={m.id} onSelect={() => selectManufacturer(m.name)} className="cursor-pointer">
+                              <Check className={cn("mr-2 h-4 w-4", form.manufacturer === m.name ? "opacity-100" : "opacity-0")} />
+                              {m.name}
+                            </CommandItem>
+                          ))}
+                          {showAddNew && (
+                            <CommandItem onSelect={addNewManufacturer} className="cursor-pointer text-primary">
+                              <Plus className="mr-2 h-4 w-4" />
+                              Adicionar "{mfgSearch.trim()}"
+                            </CommandItem>
+                          )}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
               <div><Label>Data da Compra</Label><Input type="date" value={form.purchaseDate} onChange={e => setForm({...form, purchaseDate: e.target.value})} /></div>
               <div>
                 <Label>Tipo</Label>
