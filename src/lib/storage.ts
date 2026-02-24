@@ -85,6 +85,12 @@ export type Quote = {
   createdAt: string;
 };
 
+export type Manufacturer = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
 export type CompanyInfo = {
   name: string;
   phone: string;
@@ -108,6 +114,7 @@ const KEYS = {
   company: 'hig_company',
   quotes: 'hig_quotes',
   quoteCounter: 'hig_quote_counter',
+  manufacturers: 'hig_manufacturers',
 };
 
 function get<T>(key: string, fallback: T): T {
@@ -135,6 +142,18 @@ export const db = {
 
   getQuotes: (): Quote[] => get(KEYS.quotes, []),
   saveQuotes: (q: Quote[]) => set(KEYS.quotes, q),
+
+  getManufacturers: (): Manufacturer[] => get(KEYS.manufacturers, []),
+  saveManufacturers: (m: Manufacturer[]) => set(KEYS.manufacturers, m),
+  addManufacturer: (name: string): Manufacturer => {
+    const manufacturers = get<Manufacturer[]>(KEYS.manufacturers, []);
+    const existing = manufacturers.find(m => m.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing;
+    const newM: Manufacturer = { id: generateId(), name, createdAt: new Date().toISOString() };
+    manufacturers.push(newM);
+    set(KEYS.manufacturers, manufacturers);
+    return newM;
+  },
 
   nextQuoteNumber: (): number => {
     const current = get(KEYS.quoteCounter, 0);
