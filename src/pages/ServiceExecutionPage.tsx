@@ -337,6 +337,10 @@ export default function ServiceExecutionPage() {
           products: productNames,
           observations: observations || processDesc.slice(0, 200),
           clientId: appointment.clientId,
+          startTime,
+          endTime,
+          totalMinutes: elapsedMinutes,
+          technicianName: selectedTechnician || appointment.technicianName,
         };
         clients[cIdx].serviceHistory = [...(clients[cIdx].serviceHistory || []), serviceRecord];
         db.saveClients(clients);
