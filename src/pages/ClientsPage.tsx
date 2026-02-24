@@ -1,21 +1,24 @@
 import { useState, useEffect } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Client, generateId } from "@/lib/storage";
+import { db, Client, BRAZILIAN_STATES, generateId } from "@/lib/storage";
 import { Plus, Phone, MapPin, MessageCircle, Trash2, Edit, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
 const defaultClient: Omit<Client, "id" | "createdAt" | "serviceHistory"> = {
-  name: "",
-  phone: "",
-  address: "",
-  propertyType: "",
-  observations: "",
+  name: "", phone: "", address: "", street: "", number: "", complement: "",
+  neighborhood: "", city: "", state: "", propertyType: "", observations: "",
 };
+
+function buildFullAddress(c: Omit<Client, "id" | "createdAt" | "serviceHistory">) {
+  const parts = [c.street, c.number, c.complement, c.neighborhood, c.city, c.state].filter(Boolean);
+  return parts.join(", ");
+}
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -24,20 +27,27 @@ export default function ClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState(defaultClient);
 
+  // Autocomplete data
+  const existingNeighborhoods = [...new Set(clients.map(c => c.neighborhood).filter(Boolean))];
+  const existingCities = [...new Set(clients.map(c => c.city).filter(Boolean))];
+
   useEffect(() => { setClients(db.getClients()); }, []);
 
   const filtered = clients.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone.includes(search)
+    c.phone.includes(search) ||
+    c.neighborhood?.toLowerCase().includes(search.toLowerCase()) ||
+    c.city?.toLowerCase().includes(search.toLowerCase())
   );
 
   const save = () => {
     if (!form.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    const fullAddress = buildFullAddress(form);
     let updated: Client[];
     if (editing) {
-      updated = clients.map(c => c.id === editing.id ? { ...c, ...form } : c);
+      updated = clients.map(c => c.id === editing.id ? { ...c, ...form, address: fullAddress } : c);
     } else {
-      const newClient: Client = { ...form, id: generateId(), createdAt: new Date().toISOString(), serviceHistory: [] };
+      const newClient: Client = { ...form, address: fullAddress, id: generateId(), createdAt: new Date().toISOString(), serviceHistory: [] };
       updated = [...clients, newClient];
     }
     db.saveClients(updated);
@@ -57,7 +67,12 @@ export default function ClientsPage() {
 
   const openEdit = (c: Client) => {
     setEditing(c);
-    setForm({ name: c.name, phone: c.phone, address: c.address, propertyType: c.propertyType, observations: c.observations });
+    setForm({
+      name: c.name, phone: c.phone, address: c.address,
+      street: c.street || '', number: c.number || '', complement: c.complement || '',
+      neighborhood: c.neighborhood || '', city: c.city || '', state: c.state || '',
+      propertyType: c.propertyType, observations: c.observations,
+    });
     setOpen(true);
   };
 
@@ -81,14 +96,49 @@ export default function ClientsPage() {
               <Plus className="h-4 w-4" /> Novo
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md mx-4">
+          <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editing ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
               <div><Label>Nome *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
               <div><Label>Telefone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
-              <div><Label>Endereço</Label><Input value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
+              
+              {/* Structured Address */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">📍 Endereço</p>
+                <div><Label className="text-xs">Rua</Label><Input value={form.street} onChange={e => setForm({...form, street: e.target.value})} placeholder="Nome da rua" /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">Número</Label><Input value={form.number} onChange={e => setForm({...form, number: e.target.value})} placeholder="Nº" /></div>
+                  <div><Label className="text-xs">Complemento</Label><Input value={form.complement} onChange={e => setForm({...form, complement: e.target.value})} placeholder="Apto, Bloco..." /></div>
+                </div>
+                <div>
+                  <Label className="text-xs">Bairro</Label>
+                  <Input value={form.neighborhood} onChange={e => setForm({...form, neighborhood: e.target.value})} placeholder="Bairro" list="neighborhoods-list" />
+                  <datalist id="neighborhoods-list">
+                    {existingNeighborhoods.map(n => <option key={n} value={n} />)}
+                  </datalist>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Cidade</Label>
+                    <Input value={form.city} onChange={e => setForm({...form, city: e.target.value})} placeholder="Cidade" list="cities-list" />
+                    <datalist id="cities-list">
+                      {existingCities.map(c => <option key={c} value={c} />)}
+                    </datalist>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Estado</Label>
+                    <Select value={form.state} onValueChange={v => setForm({...form, state: v})}>
+                      <SelectTrigger><SelectValue placeholder="UF" /></SelectTrigger>
+                      <SelectContent>
+                        {BRAZILIAN_STATES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
               <div><Label>Tipo de Imóvel</Label><Input value={form.propertyType} onChange={e => setForm({...form, propertyType: e.target.value})} placeholder="Residencial, Comercial..." /></div>
               <div><Label>Observações</Label><Textarea value={form.observations} onChange={e => setForm({...form, observations: e.target.value})} /></div>
               <Button onClick={save} className="w-full rounded-full">Salvar</Button>
@@ -99,7 +149,7 @@ export default function ClientsPage() {
     >
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente..." className="pl-9 rounded-full" />
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente, bairro, cidade..." className="pl-9 rounded-full" />
       </div>
 
       {filtered.length === 0 ? (
@@ -115,7 +165,11 @@ export default function ClientsPage() {
                 <div>
                   <h3 className="font-semibold text-foreground">{c.name}</h3>
                   {c.phone && <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5"><Phone className="h-3 w-3" /> {c.phone}</p>}
-                  {c.address && <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3" /> {c.address}</p>}
+                  {(c.street || c.address) && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <MapPin className="h-3 w-3" /> {c.street ? `${c.street}, ${c.number}${c.neighborhood ? ` - ${c.neighborhood}` : ''}${c.city ? `, ${c.city}` : ''}${c.state ? `/${c.state}` : ''}` : c.address}
+                    </p>
+                  )}
                   {c.propertyType && <span className="mt-1 inline-block rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{c.propertyType}</span>}
                 </div>
                 <div className="flex gap-1">
@@ -125,7 +179,7 @@ export default function ClientsPage() {
               </div>
               <div className="mt-3 flex gap-2">
                 {c.phone && <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openWhatsApp(c.phone)}><MessageCircle className="h-3.5 w-3.5" /> WhatsApp</Button>}
-                {c.address && <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openMaps(c.address)}><MapPin className="h-3.5 w-3.5" /> Rota</Button>}
+                {(c.address || c.street) && <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openMaps(c.address || buildFullAddress(c))}><MapPin className="h-3.5 w-3.5" /> Rota</Button>}
               </div>
             </div>
           ))}

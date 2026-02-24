@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Quote, QuoteServiceItem, ServiceType, generateId } from "@/lib/storage";
-import { Plus, Trash2, FileText, Send, CalendarPlus, Eye, Check, X, Clock, Ruler } from "lucide-react";
+import { db, Quote, QuoteServiceItem, ServiceType, Client, Appointment, Collaborator, BRAZILIAN_STATES, generateId } from "@/lib/storage";
+import { Plus, Trash2, FileText, Send, CalendarPlus, Eye, Check, X, Clock, Ruler, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -25,12 +25,23 @@ const isAreaBasedService = (name: string) => {
 
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [clients] = useState(() => db.getClients());
+  const [clients, setClients] = useState<Client[]>(() => db.getClients());
   const [serviceTypes] = useState(() => db.getServiceTypes().filter(st => st.isActive).sort((a, b) => a.order - b.order));
   const [company] = useState(() => db.getCompany());
+  const [collaborators] = useState<Collaborator[]>(() => db.getCollaborators().filter(c => c.status === 'ativo'));
+  const [appointments, setAppointments] = useState<Appointment[]>(() => db.getAppointments());
   const [open, setOpen] = useState(false);
   const [viewQuote, setViewQuote] = useState<Quote | null>(null);
   const [customServiceNames, setCustomServiceNames] = useState<Record<string, string>>({});
+  
+  // Schedule dialog state
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleQuote, setScheduleQuote] = useState<Quote | null>(null);
+  const [scheduleForm, setScheduleForm] = useState({ date: "", time: "", technicianId: "", technicianName: "", observations: "" });
+  
+  // Edit client dialog state
+  const [editClientOpen, setEditClientOpen] = useState(false);
+  const [editClientData, setEditClientData] = useState<Client | null>(null);
 
   const emptyService = (): QuoteServiceItem => ({ id: generateId(), name: "", quantity: 1, unitPrice: 0 });
 
@@ -155,24 +166,55 @@ export default function QuotesPage() {
     toast.success("Orçamento removido");
   };
 
-  const convertToAppointment = (q: Quote) => {
-    const appointments = db.getAppointments();
-    const appt = {
+  const openScheduleDialog = (q: Quote) => {
+    setScheduleQuote(q);
+    setScheduleForm({ date: "", time: "", technicianId: "", technicianName: "", observations: `Orçamento #${q.number} - ${q.observations}` });
+    setScheduleOpen(true);
+  };
+
+  const getBusyTimes = (date: string) => {
+    return appointments.filter(a => a.date === date && a.status === 'agendado').map(a => a.time).filter(Boolean);
+  };
+
+  const confirmSchedule = () => {
+    if (!scheduleQuote || !scheduleForm.date) { toast.error("Selecione uma data"); return; }
+    const appt: Appointment = {
       id: generateId(),
-      clientId: q.clientId,
-      clientName: q.clientName,
-      date: new Date().toISOString().split("T")[0],
-      time: "08:00",
-      serviceType: q.services.map(s => s.name).join(", "),
-      observations: `Orçamento #${q.number} - ${q.observations}`,
-      status: "agendado" as const,
-      technicianId: "",
-      technicianName: "",
+      clientId: scheduleQuote.clientId,
+      clientName: scheduleQuote.clientName,
+      date: scheduleForm.date,
+      time: scheduleForm.time,
+      serviceType: scheduleQuote.services.map(s => s.name).join(", "),
+      observations: scheduleForm.observations,
+      status: "agendado",
+      technicianId: scheduleForm.technicianId,
+      technicianName: scheduleForm.technicianName,
     };
-    db.saveAppointments([...appointments, appt]);
-    updateStatus(q.id, "aprovado");
+    const updatedAppts = [...appointments, appt];
+    db.saveAppointments(updatedAppts);
+    setAppointments(updatedAppts);
+    updateStatus(scheduleQuote.id, "aprovado");
+    setScheduleOpen(false);
     toast.success("Agendamento criado a partir do orçamento!");
   };
+
+  // Edit client
+  const openEditClient = (clientId: string) => {
+    const cl = clients.find(c => c.id === clientId);
+    if (cl) { setEditClientData({...cl}); setEditClientOpen(true); }
+  };
+
+  const saveClientEdit = () => {
+    if (!editClientData) return;
+    const fullAddr = [editClientData.street, editClientData.number, editClientData.complement, editClientData.neighborhood, editClientData.city, editClientData.state].filter(Boolean).join(", ");
+    const updated = clients.map(c => c.id === editClientData.id ? { ...editClientData, address: fullAddr } : c);
+    db.saveClients(updated);
+    setClients(updated);
+    setEditClientOpen(false);
+    toast.success("Cliente atualizado!");
+  };
+
+  const scheduleBusyTimes = scheduleForm.date ? getBusyTimes(scheduleForm.date) : [];
 
   const downloadPDF = (q: Quote) => {
     const company = db.getCompany();
@@ -447,13 +489,18 @@ export default function QuotesPage() {
                 </Button>
                 {q.status === "pendente" && (
                   <>
-                    <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs text-success" onClick={() => convertToAppointment(q)}>
+                    <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs text-success" onClick={() => openScheduleDialog(q)}>
                       <CalendarPlus className="h-3.5 w-3.5" /> Agendar
                     </Button>
                     <Button size="sm" variant="ghost" className="rounded-full gap-1 text-xs text-destructive" onClick={() => updateStatus(q.id, "recusado")}>
                       <X className="h-3.5 w-3.5" /> Recusar
                     </Button>
                   </>
+                )}
+                {q.clientId && (
+                  <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openEditClient(q.clientId)}>
+                    <User className="h-3.5 w-3.5" /> Cliente
+                  </Button>
                 )}
                 <Button size="sm" variant="ghost" className="rounded-full gap-1 text-xs text-destructive" onClick={() => removeQuote(q.id)}>
                   <Trash2 className="h-3.5 w-3.5" />
@@ -501,6 +548,90 @@ export default function QuotesPage() {
                 {viewQuote.observations && <div className="text-sm"><span className="text-muted-foreground">Observações:</span><p>{viewQuote.observations}</p></div>}
               </div>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Schedule Dialog */}
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent className="max-w-md mx-4">
+          <DialogHeader><DialogTitle>📅 Agendar Serviço</DialogTitle></DialogHeader>
+          {scheduleQuote && (
+            <div className="space-y-3">
+              <div className="rounded-lg bg-accent/50 p-3 text-sm">
+                <p className="font-medium text-foreground">{scheduleQuote.clientName}</p>
+                <p className="text-muted-foreground">{scheduleQuote.services.map(s => s.name).join(", ")}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Data *</Label><Input type="date" value={scheduleForm.date} onChange={e => setScheduleForm({...scheduleForm, date: e.target.value})} /></div>
+                <div><Label>Horário</Label><Input type="time" value={scheduleForm.time} onChange={e => setScheduleForm({...scheduleForm, time: e.target.value})} /></div>
+              </div>
+
+              {scheduleBusyTimes.length > 0 && (
+                <div className="rounded-lg bg-warning/10 border border-warning/20 p-2.5 text-xs">
+                  <p className="font-medium text-warning mb-1">⚠️ Horários ocupados neste dia:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {scheduleBusyTimes.map((t, i) => (
+                      <span key={i} className="rounded-full bg-warning/20 px-2 py-0.5 text-warning font-medium">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {collaborators.length > 0 && (
+                <div>
+                  <Label>Técnico Responsável</Label>
+                  <Select value={scheduleForm.technicianId} onValueChange={v => {
+                    const col = collaborators.find(c => c.id === v);
+                    setScheduleForm({...scheduleForm, technicianId: v, technicianName: col?.name || ""});
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o técnico" /></SelectTrigger>
+                    <SelectContent>
+                      {collaborators.map(c => <SelectItem key={c.id} value={c.id}>{c.name} - {c.role}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div><Label>Observações</Label><Textarea value={scheduleForm.observations} onChange={e => setScheduleForm({...scheduleForm, observations: e.target.value})} /></div>
+              <Button onClick={confirmSchedule} className="w-full rounded-full gap-2"><CalendarPlus className="h-4 w-4" /> Confirmar Agendamento</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Client Dialog */}
+      <Dialog open={editClientOpen} onOpenChange={setEditClientOpen}>
+        <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Editar Cliente</DialogTitle></DialogHeader>
+          {editClientData && (
+            <div className="space-y-3">
+              <div><Label>Nome</Label><Input value={editClientData.name} onChange={e => setEditClientData({...editClientData, name: e.target.value})} /></div>
+              <div><Label>Telefone</Label><Input value={editClientData.phone} onChange={e => setEditClientData({...editClientData, phone: e.target.value})} /></div>
+              <div className="rounded-lg border p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">📍 Endereço</p>
+                <div><Label className="text-xs">Rua</Label><Input value={editClientData.street || ''} onChange={e => setEditClientData({...editClientData, street: e.target.value})} /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">Número</Label><Input value={editClientData.number || ''} onChange={e => setEditClientData({...editClientData, number: e.target.value})} /></div>
+                  <div><Label className="text-xs">Complemento</Label><Input value={editClientData.complement || ''} onChange={e => setEditClientData({...editClientData, complement: e.target.value})} /></div>
+                </div>
+                <div><Label className="text-xs">Bairro</Label><Input value={editClientData.neighborhood || ''} onChange={e => setEditClientData({...editClientData, neighborhood: e.target.value})} /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">Cidade</Label><Input value={editClientData.city || ''} onChange={e => setEditClientData({...editClientData, city: e.target.value})} /></div>
+                  <div>
+                    <Label className="text-xs">Estado</Label>
+                    <Select value={editClientData.state || ''} onValueChange={v => setEditClientData({...editClientData, state: v})}>
+                      <SelectTrigger><SelectValue placeholder="UF" /></SelectTrigger>
+                      <SelectContent>
+                        {BRAZILIAN_STATES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              <Button onClick={saveClientEdit} className="w-full rounded-full">Salvar Cliente</Button>
+            </div>
           )}
         </DialogContent>
       </Dialog>

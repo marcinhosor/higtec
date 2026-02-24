@@ -1,10 +1,21 @@
 // Local storage helper for offline data persistence
 
+export const BRAZILIAN_STATES = [
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
+] as const;
+
 export type Client = {
   id: string;
   name: string;
   phone: string;
   address: string;
+  // Structured address fields
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
   propertyType: string;
   observations: string;
   serviceHistory: ServiceRecord[];
@@ -197,7 +208,9 @@ function set<T>(key: string, value: T) {
 }
 
 export const db = {
-  getClients: (): Client[] => get(KEYS.clients, []),
+  getClients: (): Client[] => get(KEYS.clients, []).map(c => ({
+    street: '', number: '', complement: '', neighborhood: '', city: '', state: '', ...c,
+  })),
   saveClients: (c: Client[]) => set(KEYS.clients, c),
 
   getAppointments: (): Appointment[] => get(KEYS.appointments, []),
