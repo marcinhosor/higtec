@@ -193,6 +193,21 @@ export type ServiceExecution = {
   createdAt: string;
 };
 
+export type Equipment = {
+  id: string;
+  name: string;
+  model: string;
+  serialNumber: string;
+  purchaseDate: string;
+  purchaseCost: number | null;
+  status: 'operacional' | 'em_manutencao' | 'inativo';
+  lastMaintenance: string;
+  nextMaintenance: string;
+  maintenanceCost: number | null;
+  observations: string;
+  createdAt: string;
+};
+
 export type PixKey = {
   id: string;
   type: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
@@ -259,6 +274,7 @@ const KEYS = {
   collaborators: 'hig_collaborators',
   serviceTypes: 'hig_service_types',
   executions: 'hig_executions',
+  equipment: 'hig_equipment',
 };
 
 const DEFAULT_SERVICE_TYPES: Omit<ServiceType, 'id' | 'createdAt'>[] = [
@@ -330,6 +346,9 @@ export const db = {
   getExecutions: (): ServiceExecution[] => get(KEYS.executions, []),
   saveExecutions: (e: ServiceExecution[]): boolean => set(KEYS.executions, e),
 
+  getEquipment: (): Equipment[] => get(KEYS.equipment, []),
+  saveEquipment: (e: Equipment[]): boolean => set(KEYS.equipment, e),
+
   addManufacturer: (name: string): Manufacturer => {
     const manufacturers = get<Manufacturer[]>(KEYS.manufacturers, []);
     const existing = manufacturers.find(m => m.name.toLowerCase() === name.toLowerCase());
@@ -372,6 +391,7 @@ export const db = {
       collaborators: db.getCollaborators(),
       serviceTypes: db.getServiceTypes(),
       executions: db.getExecutions(),
+      equipment: db.getEquipment(),
     });
   },
 
@@ -385,6 +405,7 @@ export const db = {
     if (data.collaborators) db.saveCollaborators(data.collaborators);
     if (data.serviceTypes) db.saveServiceTypes(data.serviceTypes);
     if (data.executions) db.saveExecutions(data.executions);
+    if (data.equipment) db.saveEquipment(data.equipment);
   },
 };
 
@@ -458,5 +479,18 @@ export function getLowStockProducts(): Product[] {
     if (p.availableVolume === null || p.initialVolume === null) return false;
     const status = calculateStockStatus(p);
     return status === 'baixo' || status === 'critico';
+  });
+}
+
+export function getPendingMaintenanceEquipment(): Equipment[] {
+  const company = db.getCompany();
+  if (company.planTier !== 'premium') return [];
+  const now = new Date();
+  return db.getEquipment().filter(eq => {
+    if (!eq.nextMaintenance || eq.status === 'inativo') return false;
+    const next = new Date(eq.nextMaintenance);
+    // Alert if maintenance is due within 7 days or overdue
+    const diffDays = (next.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays <= 7;
   });
 }
