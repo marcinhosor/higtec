@@ -29,6 +29,11 @@ export type ServiceRecord = {
   products: string[];
   observations: string;
   clientId: string;
+  // Time tracking for business analytics
+  startTime?: string;
+  endTime?: string;
+  totalMinutes?: number;
+  technicianName?: string;
 };
 
 export type Appointment = {
