@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ClientsPage from "./pages/ClientsPage";
@@ -22,25 +23,27 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/clientes" element={<ClientsPage />} />
-          <Route path="/agenda" element={<AgendaPage />} />
-          <Route path="/orcamentos" element={<QuotesPage />} />
-          <Route path="/calculadora" element={<CalculatorPage />} />
-          <Route path="/produtos" element={<ProductsPage />} />
-          <Route path="/relatorios" element={<ReportsPage />} />
-          <Route path="/configuracoes" element={<SettingsPage />} />
-          <Route path="/execucao" element={<ServiceExecutionPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/painel" element={<StrategicDashboardPage />} />
-          <Route path="/equipamentos" element={<EquipmentPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <ErrorBoundary>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/clientes" element={<ClientsPage />} />
+            <Route path="/agenda" element={<AgendaPage />} />
+            <Route path="/orcamentos" element={<QuotesPage />} />
+            <Route path="/calculadora" element={<CalculatorPage />} />
+            <Route path="/produtos" element={<ProductsPage />} />
+            <Route path="/relatorios" element={<ReportsPage />} />
+            <Route path="/configuracoes" element={<SettingsPage />} />
+            <Route path="/execucao" element={<ServiceExecutionPage />} />
+            <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/painel" element={<StrategicDashboardPage />} />
+            <Route path="/equipamentos" element={<EquipmentPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </ErrorBoundary>
     </TooltipProvider>
   </QueryClientProvider>
 );
