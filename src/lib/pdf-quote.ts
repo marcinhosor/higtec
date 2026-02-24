@@ -9,22 +9,10 @@ const paymentLabels: Record<string, string> = {
   parcelado: "Parcelado",
 };
 
-export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
-  const doc = new jsPDF();
-  const isPro = company.isPro;
+function renderHeader(doc: jsPDF, company: CompanyInfo, isPro: boolean): number {
+  let y = 15;
   const companyName = isPro ? company.name : "Hig Clean Tec";
 
-  let y = 15;
-
-  // Watermark for free version
-  if (!isPro) {
-    doc.setFontSize(50);
-    doc.setTextColor(200, 220, 240);
-    doc.text("HIG CLEAN TEC", 105, 150, { align: "center", angle: 45 });
-    doc.setTextColor(0, 0, 0);
-  }
-
-  // Logo
   if (isPro && company.logo) {
     try {
       doc.addImage(company.logo, "PNG", 15, y, 25, 25);
@@ -32,7 +20,6 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
     } catch { /* logo load failed */ }
   }
 
-  // Company header
   const headerX = isPro && company.logo ? 45 : 15;
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
@@ -45,15 +32,82 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
   if (company.phone) { doc.text(`Tel: ${company.phone}`, headerX, subY); subY += 5; }
   if (isPro && company.cnpj) { doc.text(`CNPJ: ${company.cnpj}`, headerX, subY); subY += 5; }
   if (isPro && company.address) { doc.text(company.address, headerX, subY); subY += 5; }
-  if (isPro && company.instagram) { doc.text(`@${company.instagram}`, headerX, subY); subY += 5; }
+  if (isPro && company.instagram) { doc.text(`@${company.instagram.replace('@', '')}`, headerX, subY); subY += 5; }
 
   y = Math.max(subY, y + 30) + 5;
 
-  // Divider
   doc.setDrawColor(41, 128, 205);
   doc.setLineWidth(0.5);
   doc.line(15, y, 195, y);
   y += 8;
+
+  return y;
+}
+
+function renderPaymentFooter(doc: jsPDF, company: CompanyInfo, y: number): number {
+  const isPro = company.isPro;
+  if (!isPro) return y;
+
+  const hasBankData = company.bankData?.bankName;
+  const primaryPix = (company.pixKeys || []).find(k => k.isPrimary);
+
+  if (!hasBankData && !primaryPix) return y;
+
+  if (y > 240) { doc.addPage(); y = 20; }
+
+  doc.setDrawColor(200, 200, 200);
+  doc.line(15, y, 195, y);
+  y += 8;
+
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(41, 128, 205);
+  doc.text("DADOS PARA PAGAMENTO", 15, y);
+  y += 7;
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(60, 60, 60);
+
+  if (hasBankData) {
+    const b = company.bankData;
+    doc.setFont("helvetica", "bold");
+    doc.text("Dados Bancários:", 15, y);
+    doc.setFont("helvetica", "normal");
+    y += 5;
+    doc.text(`Banco: ${b.bankName}`, 15, y); y += 4;
+    doc.text(`Agência: ${b.agency}  |  Conta: ${b.account} (${b.accountType === 'corrente' ? 'Corrente' : 'Poupança'})`, 15, y); y += 4;
+    doc.text(`Titular: ${b.holderName}  |  Doc: ${b.holderDocument}`, 15, y); y += 6;
+  }
+
+  if (primaryPix) {
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(41, 128, 205);
+    doc.text(`Chave Pix (Principal): ${primaryPix.value}`, 15, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(150, 150, 150);
+    doc.text("(QR Code Pix - disponível em breve)", 15, y);
+    y += 5;
+  }
+
+  return y;
+}
+
+export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
+  const doc = new jsPDF();
+  const isPro = company.isPro;
+  const companyName = isPro ? company.name : "Hig Clean Tec";
+
+  // Watermark for free version
+  if (!isPro) {
+    doc.setFontSize(50);
+    doc.setTextColor(200, 220, 240);
+    doc.text("HIG CLEAN TEC", 105, 150, { align: "center", angle: 45 });
+    doc.setTextColor(0, 0, 0);
+  }
+
+  let y = renderHeader(doc, company, isPro);
 
   // Title
   doc.setFontSize(16);
@@ -128,6 +182,9 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
     y += lines.length * 5 + 5;
   }
 
+  // Payment footer (PRO)
+  y = renderPaymentFooter(doc, company, y);
+
   // Signature
   if (y < 250) y = 250;
   doc.setDrawColor(150, 150, 150);
@@ -139,7 +196,6 @@ export function generateQuotePDF(quote: Quote, company: CompanyInfo) {
   doc.text(companyName, 60, y, { align: "center" });
   doc.text(quote.clientName, 150, y, { align: "center" });
 
-  // Save
   doc.save(`orcamento-${quote.number}.pdf`);
 }
 
@@ -148,8 +204,6 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   const isPro = company.isPro;
   const companyName = isPro ? company.name : "Hig Clean Tec";
 
-  let y = 15;
-
   if (!isPro) {
     doc.setFontSize(50);
     doc.setTextColor(200, 220, 240);
@@ -157,38 +211,18 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
     doc.setTextColor(0, 0, 0);
   }
 
-  // Header
-  if (isPro && company.logo) {
-    try { doc.addImage(company.logo, "PNG", 15, y, 25, 25); } catch {}
-  }
-  const hx = isPro && company.logo ? 45 : 15;
-  doc.setFontSize(18);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(41, 128, 205);
-  doc.text(companyName, hx, y + 6);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(100);
-  let sy = y + 13;
-  if (company.phone) { doc.text(`Tel: ${company.phone}`, hx, sy); sy += 5; }
-  if (isPro && company.cnpj) { doc.text(`CNPJ: ${company.cnpj}`, hx, sy); sy += 5; }
-  if (isPro && company.address) { doc.text(company.address, hx, sy); sy += 5; }
-  y = Math.max(sy, y + 30) + 5;
-
-  doc.setDrawColor(41, 128, 205);
-  doc.line(15, y, 195, y);
-  y += 10;
+  let y = renderHeader(doc, company, isPro);
 
   // Title
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(30);
+  doc.setTextColor(30, 30, 30);
   doc.text("PROPOSTA COMERCIAL", 105, y, { align: "center" });
   y += 10;
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(60);
+  doc.setTextColor(60, 60, 60);
   doc.text(`Cliente: ${quote.clientName}`, 15, y);
   doc.text(`Data: ${new Date(quote.date + "T00:00").toLocaleDateString("pt-BR")}`, 140, y);
   y += 10;
@@ -204,7 +238,7 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
     y += 6;
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(60);
+    doc.setTextColor(60, 60, 60);
     const lines = doc.splitTextToSize(content, 175);
     doc.text(lines, 15, y);
     y += lines.length * 5 + 8;
@@ -245,20 +279,23 @@ export function generateProposalPDF(quote: Quote, company: CompanyInfo) {
   y += 8;
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(60);
+  doc.setTextColor(60, 60, 60);
   doc.text(`Forma de Pagamento: ${paymentLabels[quote.paymentMethod]}`, 15, y);
   y += 5;
   doc.text(`Validade da proposta: ${quote.validityDays} dias`, 15, y);
-  y += 15;
+  y += 10;
+
+  // Payment footer (PRO)
+  y = renderPaymentFooter(doc, company, y);
 
   // Signature
   if (y < 250) y = 250;
-  doc.setDrawColor(150);
+  doc.setDrawColor(150, 150, 150);
   doc.line(30, y, 90, y);
   doc.line(120, y, 180, y);
   y += 5;
   doc.setFontSize(9);
-  doc.setTextColor(100);
+  doc.setTextColor(100, 100, 100);
   doc.text(companyName, 60, y, { align: "center" });
   doc.text(quote.clientName, 150, y, { align: "center" });
 
