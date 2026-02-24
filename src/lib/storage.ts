@@ -91,6 +91,22 @@ export type Manufacturer = {
   createdAt: string;
 };
 
+export type PixKey = {
+  id: string;
+  type: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
+  value: string;
+  isPrimary: boolean;
+};
+
+export type BankData = {
+  bankName: string;
+  agency: string;
+  account: string;
+  accountType: 'corrente' | 'poupanca';
+  holderName: string;
+  holderDocument: string;
+};
+
 export type CompanyInfo = {
   name: string;
   phone: string;
@@ -105,6 +121,9 @@ export type CompanyInfo = {
   serviceGuarantee: string;
   executionMethod: string;
   technicalRecommendation: string;
+  // PRO: Payment data
+  bankData: BankData;
+  pixKeys: PixKey[];
 };
 
 const KEYS = {
@@ -164,7 +183,9 @@ export const db = {
 
   getCompany: (): CompanyInfo => get(KEYS.company, {
     name: 'Hig Clean Tec', phone: '', cnpj: '', logo: '', address: '', instagram: '', signature: '',
-    isPro: false, companyDescription: '', differentials: '', serviceGuarantee: '', executionMethod: '', technicalRecommendation: ''
+    isPro: false, companyDescription: '', differentials: '', serviceGuarantee: '', executionMethod: '', technicalRecommendation: '',
+    bankData: { bankName: '', agency: '', account: '', accountType: 'corrente', holderName: '', holderDocument: '' },
+    pixKeys: [],
   }),
   saveCompany: (c: CompanyInfo) => set(KEYS.company, c),
 

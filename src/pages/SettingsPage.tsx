@@ -1,16 +1,32 @@
 import { useState } from "react";
 import PageShell from "@/components/PageShell";
-import { db, CompanyInfo } from "@/lib/storage";
+import { db, CompanyInfo, PixKey, generateId } from "@/lib/storage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Download, Upload, Building2, Save, Crown, ImagePlus } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
+const pixTypeLabels: Record<PixKey['type'], string> = {
+  cpf: 'CPF',
+  cnpj: 'CNPJ',
+  email: 'E-mail',
+  telefone: 'Telefone',
+  aleatoria: 'Aleatória',
+};
+
 export default function SettingsPage() {
-  const [company, setCompany] = useState<CompanyInfo>(db.getCompany());
+  const [company, setCompany] = useState<CompanyInfo>(() => {
+    const c = db.getCompany();
+    return {
+      ...c,
+      bankData: c.bankData || { bankName: '', agency: '', account: '', accountType: 'corrente', holderName: '', holderDocument: '' },
+      pixKeys: c.pixKeys || [],
+    };
+  });
 
   const saveCompany = () => {
     db.saveCompany(company);
@@ -35,6 +51,33 @@ export default function SettingsPage() {
       setCompany({ ...company, signature: reader.result as string });
     };
     reader.readAsDataURL(file);
+  };
+
+  const addPixKey = () => {
+    const newKey: PixKey = { id: generateId(), type: 'cpf', value: '', isPrimary: company.pixKeys.length === 0 };
+    setCompany({ ...company, pixKeys: [...company.pixKeys, newKey] });
+  };
+
+  const updatePixKey = (id: string, updates: Partial<PixKey>) => {
+    setCompany({
+      ...company,
+      pixKeys: company.pixKeys.map(k => k.id === id ? { ...k, ...updates } : k),
+    });
+  };
+
+  const removePixKey = (id: string) => {
+    const filtered = company.pixKeys.filter(k => k.id !== id);
+    if (filtered.length > 0 && !filtered.some(k => k.isPrimary)) {
+      filtered[0].isPrimary = true;
+    }
+    setCompany({ ...company, pixKeys: filtered });
+  };
+
+  const setPrimaryPix = (id: string) => {
+    setCompany({
+      ...company,
+      pixKeys: company.pixKeys.map(k => ({ ...k, isPrimary: k.id === id })),
+    });
   };
 
   const exportBackup = () => {
@@ -135,6 +178,80 @@ export default function SettingsPage() {
             <Button onClick={saveCompany} className="w-full rounded-full gap-2"><Save className="h-4 w-4" /> Salvar</Button>
           </div>
         </div>
+
+        {/* Payment Data (PRO) */}
+        {company.isPro && (
+          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                <CreditCard className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="font-semibold text-foreground">Dados de Pagamento</h2>
+            </div>
+
+            {/* Bank Data */}
+            <div className="space-y-3 mb-5">
+              <h3 className="text-sm font-medium text-muted-foreground">🏦 Dados Bancários</h3>
+              <div><Label>Nome do Banco</Label><Input value={company.bankData.bankName} onChange={e => setCompany({ ...company, bankData: { ...company.bankData, bankName: e.target.value } })} placeholder="Ex: Nubank, Itaú..." /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Agência</Label><Input value={company.bankData.agency} onChange={e => setCompany({ ...company, bankData: { ...company.bankData, agency: e.target.value } })} /></div>
+                <div><Label>Conta</Label><Input value={company.bankData.account} onChange={e => setCompany({ ...company, bankData: { ...company.bankData, account: e.target.value } })} /></div>
+              </div>
+              <div>
+                <Label>Tipo de Conta</Label>
+                <Select value={company.bankData.accountType} onValueChange={v => setCompany({ ...company, bankData: { ...company.bankData, accountType: v as 'corrente' | 'poupanca' } })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="corrente">Conta Corrente</SelectItem>
+                    <SelectItem value="poupanca">Conta Poupança</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Nome do Titular</Label><Input value={company.bankData.holderName} onChange={e => setCompany({ ...company, bankData: { ...company.bankData, holderName: e.target.value } })} /></div>
+              <div><Label>CNPJ ou CPF do Titular</Label><Input value={company.bankData.holderDocument} onChange={e => setCompany({ ...company, bankData: { ...company.bankData, holderDocument: e.target.value } })} /></div>
+            </div>
+
+            {/* Pix Keys */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-muted-foreground">⚡ Chaves Pix</h3>
+              {company.pixKeys.map(key => (
+                <div key={key.id} className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Select value={key.type} onValueChange={v => updatePixKey(key.id, { type: v as PixKey['type'] })}>
+                      <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(pixTypeLabels).map(([val, label]) => (
+                          <SelectItem key={val} value={val}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-1">
+                      <Button variant={key.isPrimary ? "default" : "ghost"} size="icon" className="h-8 w-8" onClick={() => setPrimaryPix(key.id)} title="Marcar como principal">
+                        <Star className={`h-4 w-4 ${key.isPrimary ? 'fill-current' : ''}`} />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removePixKey(key.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <Input value={key.value} onChange={e => updatePixKey(key.id, { value: e.target.value })} placeholder={`Chave Pix (${pixTypeLabels[key.type]})`} />
+                  {key.isPrimary && <span className="text-xs text-primary font-medium">★ Chave Principal</span>}
+                </div>
+              ))}
+              <Button variant="outline" onClick={addPixKey} className="w-full rounded-full gap-2">
+                <Plus className="h-4 w-4" /> Adicionar Chave Pix
+              </Button>
+            </div>
+
+            <Button onClick={saveCompany} className="w-full rounded-full gap-2 mt-4"><Save className="h-4 w-4" /> Salvar Dados de Pagamento</Button>
+          </div>
+        )}
+
+        {!company.isPro && (
+          <div className="rounded-xl bg-muted/50 p-4 text-center animate-fade-in">
+            <p className="text-sm text-muted-foreground">💳 Personalização empresarial e dados de pagamento disponíveis na <span className="font-medium text-primary">versão PRO</span></p>
+          </div>
+        )}
 
         {/* Proposal text settings (PRO) */}
         {company.isPro && (
