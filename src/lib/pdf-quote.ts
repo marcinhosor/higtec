@@ -584,52 +584,96 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     y = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  const addPhotos = (photos: ExecutionPhoto[], label: string) => {
-    if (photos.length === 0) return;
+  // ---- FOTOS ANTES x DEPOIS lado a lado (economia de papel) ----
+  const hasPhotos = photosBefore.length > 0 || photosAfter.length > 0;
+  if (hasPhotos) {
     doc.addPage();
     y = 20;
 
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...tc);
-    doc.text(`📷 Fotos - ${label}`, 15, y);
-    y += 10;
+    doc.text("📷 Registro Fotográfico", 105, y, { align: "center" });
+    y += 4;
 
-    photos.forEach((photo, idx) => {
-      if (y > 200) { doc.addPage(); y = 20; }
-      try {
-        if (label === "ANTES") { doc.setFillColor(255, 200, 50); }
-        else { doc.setFillColor(50, 200, 100); }
-        doc.roundedRect(15, y - 4, 25, 8, 2, 2, "F");
+    // Eco badge
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(80, 160, 80);
+    doc.text("🌱 Layout otimizado para redução de impressão", 105, y + 4, { align: "center" });
+    y += 12;
+
+    const maxPairs = Math.max(photosBefore.length, photosAfter.length);
+    const colLeftX = 15;
+    const colRightX = 108;
+    const imgW = 82;
+    const imgH = 55;
+
+    for (let i = 0; i < maxPairs; i++) {
+      // Check if we need a new page (photo block = badge 10 + image 55 + desc 8 ≈ 73)
+      if (y + 75 > 280) { doc.addPage(); y = 20; }
+
+      const photoBefore = photosBefore[i] || null;
+      const photoAfter = photosAfter[i] || null;
+
+      // Column headers for first pair or new page
+      if (i === 0 || y === 20) {
+        // ANTES header
+        doc.setFillColor(255, 200, 50);
+        doc.roundedRect(colLeftX, y, 30, 7, 2, 2, "F");
         doc.setFontSize(8);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(0, 0, 0);
-        doc.text(label, 17, y + 1);
+        doc.text("ANTES", colLeftX + 2, y + 5);
 
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Foto ${idx + 1} - ${new Date(photo.timestamp).toLocaleString("pt-BR")}`, 45, y + 1);
-        y += 8;
-
-        doc.addImage(photo.dataUrl, "JPEG", 15, y, 80, 60);
-        if (photo.description) {
-          doc.setFontSize(9);
-          doc.setTextColor(60, 60, 60);
-          doc.text(photo.description, 100, y + 10);
-        }
-        y += 68;
-      } catch {
-        doc.setFontSize(9);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`[Foto ${idx + 1} não pôde ser carregada]`, 15, y);
+        // DEPOIS header
+        doc.setFillColor(50, 200, 100);
+        doc.roundedRect(colRightX, y, 30, 7, 2, 2, "F");
+        doc.setTextColor(0, 0, 0);
+        doc.text("DEPOIS", colRightX + 2, y + 5);
         y += 10;
       }
-    });
-  };
 
-  addPhotos(photosBefore, "ANTES");
-  addPhotos(photosAfter, "DEPOIS");
+      // Render left (ANTES)
+      const photoYStart = y;
+      if (photoBefore) {
+        try {
+          doc.addImage(photoBefore.dataUrl, "JPEG", colLeftX, y, imgW, imgH);
+          if (photoBefore.description) {
+            doc.setFontSize(7);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(80, 80, 80);
+            const descLines = doc.splitTextToSize(photoBefore.description, imgW);
+            doc.text(descLines, colLeftX, y + imgH + 4);
+          }
+        } catch {
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text(`[Foto ${i + 1} indisponível]`, colLeftX, y + 20);
+        }
+      }
+
+      // Render right (DEPOIS)
+      if (photoAfter) {
+        try {
+          doc.addImage(photoAfter.dataUrl, "JPEG", colRightX, photoYStart, imgW, imgH);
+          if (photoAfter.description) {
+            doc.setFontSize(7);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(80, 80, 80);
+            const descLines = doc.splitTextToSize(photoAfter.description, imgW);
+            doc.text(descLines, colRightX, photoYStart + imgH + 4);
+          }
+        } catch {
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text(`[Foto ${i + 1} indisponível]`, colRightX, photoYStart + 20);
+        }
+      }
+
+      y = photoYStart + imgH + 12;
+    }
+  }
 
   doc.addPage();
   y = 220;
