@@ -565,7 +565,7 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(200, 50, 50);
-    doc.text("⚠ REGISTRO DE NÃO CONFORMIDADES", 15, y);
+    doc.text("REGISTRO DE NAO CONFORMIDADES", 15, y);
     y += 7;
 
     autoTable(doc, {
@@ -587,20 +587,20 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
   // ---- FOTOS ANTES x DEPOIS lado a lado (economia de papel) ----
   const hasPhotos = photosBefore.length > 0 || photosAfter.length > 0;
   if (hasPhotos) {
-    // Continue on same page if there's room, otherwise new page
+    // Stay on same page if room, otherwise new page
     if (y + 75 > 280) { doc.addPage(); y = 20; }
 
     doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...tc);
-    doc.text("📷 Registro Fotográfico", 15, y);
-    y += 4;
+    doc.text("REGISTRO FOTOGRAFICO", 15, y);
+    y += 5;
 
     doc.setFontSize(7);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(80, 160, 80);
-    doc.text("🌱 Layout otimizado para redução de impressão", 15, y + 4);
-    y += 12;
+    doc.text("Layout otimizado para reducao de impressao", 15, y + 3);
+    y += 10;
 
     const maxPairs = Math.max(photosBefore.length, photosAfter.length);
     const colLeftX = 15;
