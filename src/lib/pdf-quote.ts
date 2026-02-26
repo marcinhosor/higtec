@@ -560,8 +560,6 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     y = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  addField("Observações Finais", observations);
-
   if (nonConformities.length > 0) {
     if (y > 230) { doc.addPage(); y = 20; }
     doc.setFontSize(12);
@@ -584,23 +582,24 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     y = (doc as any).lastAutoTable.finalY + 8;
   }
 
+  addField("Observações Finais", observations);
+
   // ---- FOTOS ANTES x DEPOIS lado a lado (economia de papel) ----
   const hasPhotos = photosBefore.length > 0 || photosAfter.length > 0;
   if (hasPhotos) {
-    doc.addPage();
-    y = 20;
+    // Continue on same page if there's room, otherwise new page
+    if (y + 75 > 280) { doc.addPage(); y = 20; }
 
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...tc);
-    doc.text("📷 Registro Fotográfico", 105, y, { align: "center" });
+    doc.text("📷 Registro Fotográfico", 15, y);
     y += 4;
 
-    // Eco badge
     doc.setFontSize(7);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(80, 160, 80);
-    doc.text("🌱 Layout otimizado para redução de impressão", 105, y + 4, { align: "center" });
+    doc.text("🌱 Layout otimizado para redução de impressão", 15, y + 4);
     y += 12;
 
     const maxPairs = Math.max(photosBefore.length, photosAfter.length);
