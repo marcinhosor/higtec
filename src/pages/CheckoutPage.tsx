@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles } from "lucide-react";
+import { Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles, Loader2 } from "lucide-react";
 import { startTrial, trackEvent, getSubscription } from "@/lib/analytics";
 import { db } from "@/lib/storage";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+
+declare global {
+  interface Window {
+    MercadoPago: any;
+  }
+}
 
 interface Feature {
   label: string;
@@ -56,8 +64,49 @@ const plans = [
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<"pro" | "premium">("pro");
   const sub = getSubscription();
+  const [mpReady, setMpReady] = useState(false);
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [loadingMp, setLoadingMp] = useState(true);
+  const paymentBrickRef = useRef<HTMLDivElement>(null);
+  const brickControllerRef = useRef<any>(null);
+
+  // Fetch MP public key from admin_settings
+  useEffect(() => {
+    const fetchPublicKey = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("admin_settings")
+          .select("setting_value")
+          .eq("setting_key", "mp_public_key")
+          .maybeSingle();
+
+        if (data?.setting_value) {
+          setPublicKey(data.setting_value);
+        }
+      } catch (err) {
+        console.error("Error fetching MP public key:", err);
+      } finally {
+        setLoadingMp(false);
+      }
+    };
+    fetchPublicKey();
+  }, []);
+
+  // Initialize MercadoPago SDK when public key is available
+  useEffect(() => {
+    if (!publicKey || !window.MercadoPago) return;
+
+    try {
+      const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
+      setMpReady(true);
+      console.log("MercadoPago SDK initialized successfully");
+    } catch (err) {
+      console.error("Error initializing MercadoPago:", err);
+    }
+  }, [publicKey]);
 
   const handleStartTrial = () => {
     startTrial();
@@ -175,6 +224,21 @@ export default function CheckoutPage() {
           <p className="font-bold">Teste grátis de 7 dias</p>
           <p className="mt-1 text-sm text-muted-foreground">Cancele quando quiser. Sem compromisso.</p>
         </div>
+
+        {/* MercadoPago Status */}
+        {loadingMp ? (
+          <div className="flex items-center justify-center gap-2 mb-4 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando gateway de pagamento...
+          </div>
+        ) : mpReady ? (
+          <div className="mb-4 rounded-xl border border-[hsl(152,60%,50%)]/30 bg-[hsl(152,60%,50%)]/5 p-3 text-center text-sm text-[hsl(152,60%,50%)]">
+            ✅ Mercado Pago conectado — pagamentos habilitados
+          </div>
+        ) : null}
+
+        {/* Payment Brick container */}
+        <div ref={paymentBrickRef} id="paymentBrick_container" className="mb-6" />
 
         {/* CTA */}
         <Button
