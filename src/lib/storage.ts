@@ -235,10 +235,12 @@ export type ThemePalette = {
 
 export const THEME_PALETTES: ThemePalette[] = [
   { id: 'default', name: 'Azul Padrão', primary: '#2980CD', secondary: '#D6E9F8', accent: '#1a5276', background: '#f0f7ff' },
-  { id: 'black-gold', name: 'Premium Black & Gold', primary: '#D4AF37', secondary: '#1a1a1a', accent: '#FFD700', background: '#0d0d0d' },
-  { id: 'corporate-blue', name: 'Azul Corporativo', primary: '#1B3A5C', secondary: '#4A90D9', accent: '#FFFFFF', background: '#E8EFF7' },
-  { id: 'green-pro', name: 'Verde Profissional', primary: '#1B5E20', secondary: '#4CAF50', accent: '#FFFFFF', background: '#E8F5E9' },
-  { id: 'minimal-gray', name: 'Cinza Minimalista', primary: '#37474F', secondary: '#90A4AE', accent: '#FFFFFF', background: '#ECEFF1' },
+  { id: 'black-gold', name: 'Preto Ônix & Dourado Imperial', primary: '#C6A756', secondary: '#2A2A2A', accent: '#D4AF37', background: '#121212' },
+  { id: 'corporate-blue', name: 'Azul Profundo & Prata Elegante', primary: '#0F1C2E', secondary: '#9EA7B3', accent: '#1F3A5F', background: '#F4F6F8' },
+  { id: 'green-pro', name: 'Verde Esmeralda & Champagne', primary: '#0E3B2E', secondary: '#D6C6A8', accent: '#1F5C49', background: '#F7F5F0' },
+  { id: 'minimal-gray', name: 'Cinza Grafite & Azul Safira', primary: '#1E1E1E', secondary: '#1C3F60', accent: '#2E5E8C', background: '#F2F2F2' },
+  { id: 'white-gold', name: 'Branco Premium & Dourado Suave', primary: '#111111', secondary: '#C8A951', accent: '#B8923F', background: '#F8F8F8' },
+  { id: 'petrol-copper', name: 'Azul Petróleo & Cobre Sofisticado', primary: '#0F3057', secondary: '#B87333', accent: '#163E6C', background: '#F4F7FA' },
 ];
 
 export type PlanTier = 'free' | 'pro' | 'premium';
