@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { db, THEME_PALETTES, type ThemePalette } from "@/lib/storage";
+import { db, THEME_PALETTES, DEFAULT_CUSTOM_THEME, type ThemePalette, type CustomTheme } from "@/lib/storage";
 
 function hexToHsl(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -23,7 +23,22 @@ function hexToHsl(hex: string): string {
 export function getActiveTheme(): ThemePalette {
   const company = db.getCompany();
   const canUseTheme = company.isPro || company.planTier === 'pro' || company.planTier === 'premium';
-  if (!canUseTheme) return THEME_PALETTES[0]; // default
+  if (!canUseTheme) return THEME_PALETTES[0];
+
+  // Check for custom theme (Premium only)
+  if (company.customTheme?.enabled && company.planTier === 'premium') {
+    const ct = company.customTheme;
+    return {
+      id: 'custom',
+      name: 'Personalizado',
+      primary: ct.primary,
+      secondary: ct.secondary,
+      accent: ct.accent,
+      background: ct.background,
+      cta: ct.cta,
+    };
+  }
+
   return THEME_PALETTES.find(t => t.id === company.selectedThemeId) || THEME_PALETTES[0];
 }
 
@@ -35,9 +50,8 @@ export function applyThemeToDOM(theme: ThemePalette) {
   root.style.setProperty('--accent', hexToHsl(theme.accent));
   root.style.setProperty('--theme-secondary', hexToHsl(theme.secondary));
   root.style.setProperty('--theme-bg', hexToHsl(theme.background));
-  // Update gradient-primary dynamically
   root.style.setProperty('--gradient-from', theme.primary);
-  root.style.setProperty('--gradient-to', theme.accent);
+  root.style.setProperty('--gradient-to', theme.cta || theme.accent);
 }
 
 export function useTheme() {
@@ -50,8 +64,27 @@ export function useTheme() {
   const setTheme = useCallback((themeId: string) => {
     const company = db.getCompany();
     company.selectedThemeId = themeId;
+    if (company.customTheme) company.customTheme.enabled = false;
     db.saveCompany(company);
     const t = THEME_PALETTES.find(p => p.id === themeId) || THEME_PALETTES[0];
+    setThemeState(t);
+    applyThemeToDOM(t);
+  }, []);
+
+  const setCustomTheme = useCallback((custom: CustomTheme) => {
+    const company = db.getCompany();
+    company.customTheme = { ...custom, enabled: true };
+    company.selectedThemeId = 'custom';
+    db.saveCompany(company);
+    const t: ThemePalette = {
+      id: 'custom',
+      name: 'Personalizado',
+      primary: custom.primary,
+      secondary: custom.secondary,
+      accent: custom.accent,
+      background: custom.background,
+      cta: custom.cta,
+    };
     setThemeState(t);
     applyThemeToDOM(t);
   }, []);
@@ -62,5 +95,5 @@ export function useTheme() {
     applyThemeToDOM(t);
   }, []);
 
-  return { theme, setTheme, refresh, palettes: THEME_PALETTES };
+  return { theme, setTheme, setCustomTheme, refresh, palettes: THEME_PALETTES };
 }
