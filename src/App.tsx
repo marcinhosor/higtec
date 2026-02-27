@@ -19,6 +19,7 @@ import ServiceExecutionPage from "./pages/ServiceExecutionPage";
 import CheckoutPage from "./pages/CheckoutPage";
 import StrategicDashboardPage from "./pages/StrategicDashboardPage";
 import EquipmentPage from "./pages/EquipmentPage";
+import AdminPanelPage from "./pages/AdminPanelPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -53,6 +54,7 @@ const App = () => (
               <Route path="/execucao" element={<ProtectedRoute><ServiceExecutionPage /></ProtectedRoute>} />
               <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
               <Route path="/painel" element={<ProtectedRoute><StrategicDashboardPage /></ProtectedRoute>} />
+              <Route path="/painel-admin" element={<ProtectedRoute><AdminPanelPage /></ProtectedRoute>} />
               <Route path="/equipamentos" element={<ProtectedRoute><EquipmentPage /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
