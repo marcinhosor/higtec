@@ -361,6 +361,7 @@ export default function SettingsPage() {
             selectedId={company.selectedThemeId}
             onSelect={handleThemeSelect}
             canChange={dbIsPro}
+            isPro={dbPlanTier === 'pro'}
             isPremium={dbPlanTier === 'premium'}
             customTheme={company.customTheme || DEFAULT_CUSTOM_THEME}
             onCustomTheme={(ct) => {
