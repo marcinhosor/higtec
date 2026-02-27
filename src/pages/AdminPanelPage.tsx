@@ -79,12 +79,11 @@ export default function AdminPanelPage() {
   useEffect(() => {
     if (!user) return;
     supabase
-      .rpc("has_role", { _user_id: user.id, _role: "admin" })
+      .rpc("is_master_admin" as any, { _user_id: user.id })
       .then(({ data }) => {
         setIsAdmin(!!data);
         setLoading(false);
         if (!data) {
-          toast.error("Acesso restrito a administradores");
           navigate("/");
         }
       });
