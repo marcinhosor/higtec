@@ -674,16 +674,19 @@ export function generateExecutionReportPDF(data: ExecutionReportData) {
     }
   }
 
-  doc.addPage();
-  y = 220;
+  // Assinaturas - mesma página se houver espaço (~40px necessários)
+  const sigHeight = 40;
+  if (y + sigHeight > 280) { doc.addPage(); y = 20; }
+
+  // Posiciona assinaturas no final da área disponível
+  const sigY = Math.max(y + 15, 240);
   doc.setDrawColor(150, 150, 150);
-  doc.line(30, y, 90, y);
-  doc.line(120, y, 180, y);
-  y += 5;
+  doc.line(30, sigY, 90, sigY);
+  doc.line(120, sigY, 180, sigY);
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
-  doc.text(appointment.technicianName || companyName, 60, y, { align: "center" });
-  doc.text(appointment.clientName, 150, y, { align: "center" });
+  doc.text(appointment.technicianName || companyName, 60, sigY + 5, { align: "center" });
+  doc.text(appointment.clientName, 150, sigY + 5, { align: "center" });
 
   return doc;
 }
