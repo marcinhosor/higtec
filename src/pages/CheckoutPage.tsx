@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,10 @@ import {
   Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles, Loader2,
   CreditCard, QrCode, FileText, Copy, ExternalLink,
 } from "lucide-react";
-import { startTrial, trackEvent, getSubscription } from "@/lib/analytics";
-import { db } from "@/lib/storage";
+import { trackEvent } from "@/lib/analytics";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { supabase } from "@/integrations/supabase/client";
 
 declare global {
@@ -64,8 +64,8 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { planTier, companyId, isTrialActive, refresh: refreshPlan } = useCompanyPlan();
   const [selectedPlan, setSelectedPlan] = useState<"pro" | "premium">("pro");
-  const sub = getSubscription();
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [loadingMp, setLoadingMp] = useState(true);
   const [mpInstance, setMpInstance] = useState<any>(null);
@@ -85,6 +85,9 @@ export default function CheckoutPage() {
   const [payerEmail, setPayerEmail] = useState(user?.email || "");
   const [payerFirstName, setPayerFirstName] = useState("");
   const [payerLastName, setPayerLastName] = useState("");
+
+  // Trial is available only if user is on free plan and not already trialing
+  const canTrial = planTier === "free" && !isTrialActive;
 
   // Fetch public key
   useEffect(() => {
@@ -111,7 +114,6 @@ export default function CheckoutPage() {
     try {
       const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
       setMpInstance(mp);
-      console.log("MercadoPago SDK initialized");
     } catch (err) {
       console.error("Error initializing MercadoPago:", err);
     }
@@ -152,7 +154,11 @@ export default function CheckoutPage() {
 
       if (data.status === "approved") {
         toast({ title: "🎉 Pagamento aprovado!", description: "Seu plano será ativado em instantes." });
-        setTimeout(() => navigate("/"), 2000);
+        // Refresh plan from DB after webhook processes
+        setTimeout(async () => {
+          await refreshPlan();
+          navigate("/");
+        }, 3000);
       } else if (data.status === "pending" || data.status === "in_process") {
         toast({ title: "⏳ Pagamento pendente", description: "Siga as instruções para concluir." });
       } else {
@@ -164,7 +170,7 @@ export default function CheckoutPage() {
     } finally {
       setProcessing(false);
     }
-  }, [selectedPlan, user, payerEmail, docType, docNumber, payerFirstName, payerLastName]);
+  }, [selectedPlan, user, payerEmail, docType, docNumber, payerFirstName, payerLastName, refreshPlan]);
 
   const handleCardPayment = useCallback(async () => {
     if (!mpInstance) {
@@ -174,10 +180,8 @@ export default function CheckoutPage() {
 
     setProcessing(true);
     try {
-      // Parse expiry
       const [expMonth, expYear] = cardExpiry.split("/").map(s => s.trim());
 
-      // Create card token via MP SDK
       const tokenResponse = await mpInstance.createCardToken({
         cardNumber: cardNumber.replace(/\s/g, ""),
         cardholderName: cardHolder,
@@ -207,19 +211,40 @@ export default function CheckoutPage() {
   const handlePixPayment = () => processPayment("pix");
   const handleBoletoPayment = () => processPayment("boleto");
 
-  const handleStartTrial = () => {
-    startTrial();
-    const company = db.getCompany();
-    company.planTier = selectedPlan;
-    company.isPro = true;
-    db.saveCompany(company);
-    trackEvent("started_trial", { plan: selectedPlan });
-    toast({ title: "🎉 Teste grátis ativado!", description: `Você tem 7 dias para experimentar todos os recursos ${selectedPlan.toUpperCase()}.` });
-    navigate("/");
+  const handleStartTrial = async () => {
+    if (!user || !companyId) {
+      toast({ title: "Faça login para continuar", variant: "destructive" });
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const trialEnd = new Date();
+      trialEnd.setDate(trialEnd.getDate() + 7);
+
+      const { error } = await supabase
+        .from("companies")
+        .update({
+          plan_tier: selectedPlan,
+          trial_ends_at: trialEnd.toISOString(),
+        })
+        .eq("id", companyId);
+
+      if (error) throw error;
+
+      trackEvent("started_trial", { plan: selectedPlan });
+      toast({ title: "🎉 Teste grátis ativado!", description: `Você tem 7 dias para experimentar todos os recursos ${selectedPlan.toUpperCase()}.` });
+      await refreshPlan();
+      navigate("/");
+    } catch (err: any) {
+      console.error("Trial error:", err);
+      toast({ title: "Erro ao ativar teste", description: err.message, variant: "destructive" });
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const selected = plans.find((p) => p.id === selectedPlan)!;
-  const canTrial = sub.subscriptionStatus !== "trial" && sub.subscriptionStatus !== "active";
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -355,41 +380,21 @@ export default function CheckoutPage() {
                 <TabsContent value="card" className="space-y-4">
                   <div>
                     <Label>Número do cartão</Label>
-                    <Input
-                      placeholder="0000 0000 0000 0000"
-                      value={cardNumber}
-                      onChange={(e) => setCardNumber(e.target.value)}
-                      maxLength={19}
-                    />
+                    <Input placeholder="0000 0000 0000 0000" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} maxLength={19} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label>Validade</Label>
-                      <Input
-                        placeholder="MM/AA"
-                        value={cardExpiry}
-                        onChange={(e) => setCardExpiry(e.target.value)}
-                        maxLength={5}
-                      />
+                      <Input placeholder="MM/AA" value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)} maxLength={5} />
                     </div>
                     <div>
                       <Label>CVV</Label>
-                      <Input
-                        placeholder="123"
-                        value={cardCvc}
-                        onChange={(e) => setCardCvc(e.target.value)}
-                        maxLength={4}
-                        type="password"
-                      />
+                      <Input placeholder="123" value={cardCvc} onChange={(e) => setCardCvc(e.target.value)} maxLength={4} type="password" />
                     </div>
                   </div>
                   <div>
                     <Label>Nome no cartão</Label>
-                    <Input
-                      placeholder="NOME COMO ESTÁ NO CARTÃO"
-                      value={cardHolder}
-                      onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
-                    />
+                    <Input placeholder="NOME COMO ESTÁ NO CARTÃO" value={cardHolder} onChange={(e) => setCardHolder(e.target.value.toUpperCase())} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -404,11 +409,7 @@ export default function CheckoutPage() {
                     </div>
                     <div>
                       <Label>Nº do documento</Label>
-                      <Input
-                        placeholder="000.000.000-00"
-                        value={docNumber}
-                        onChange={(e) => setDocNumber(e.target.value)}
-                      />
+                      <Input placeholder="000.000.000-00" value={docNumber} onChange={(e) => setDocNumber(e.target.value)} />
                     </div>
                   </div>
                   <div>
@@ -516,13 +517,18 @@ export default function CheckoutPage() {
 
         {/* Trial button */}
         {canTrial && !paymentResult && (
-          <Button onClick={handleStartTrial} variant="outline" className="w-full h-12 rounded-2xl text-base font-semibold mt-4">
-            <Sparkles className="mr-2 h-5 w-5" />
+          <Button
+            onClick={handleStartTrial}
+            disabled={processing}
+            variant="outline"
+            className="w-full h-12 rounded-2xl text-base font-semibold mt-4"
+          >
+            {processing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Sparkles className="mr-2 h-5 w-5" />}
             Começar teste grátis de 7 dias
           </Button>
         )}
 
-        {sub.subscriptionStatus === "trial" && (
+        {isTrialActive && (
           <p className="mt-3 text-center text-sm text-primary">✨ Seu teste está ativo!</p>
         )}
 
@@ -555,19 +561,12 @@ function PaymentResultView({ result, onCopy }: { result: any; onCopy: (text: str
         </div>
         {result.pix_qr_code_base64 && (
           <div className="flex justify-center mb-4">
-            <img
-              src={`data:image/png;base64,${result.pix_qr_code_base64}`}
-              alt="QR Code Pix"
-              className="w-48 h-48 rounded-lg"
-            />
+            <img src={`data:image/png;base64,${result.pix_qr_code_base64}`} alt="QR Code Pix" className="w-48 h-48 rounded-lg" />
           </div>
         )}
         <div className="relative">
           <Input value={result.pix_qr_code} readOnly className="pr-12 text-xs font-mono" />
-          <button
-            onClick={() => onCopy(result.pix_qr_code)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-muted"
-          >
+          <button onClick={() => onCopy(result.pix_qr_code)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-muted">
             <Copy className="h-4 w-4" />
           </button>
         </div>
@@ -596,7 +595,6 @@ function PaymentResultView({ result, onCopy }: { result: any; onCopy: (text: str
     );
   }
 
-  // Generic pending/rejected
   return (
     <div className="rounded-2xl border border-border bg-card p-6 mb-6 text-center">
       <h3 className="text-lg font-bold mb-1">
