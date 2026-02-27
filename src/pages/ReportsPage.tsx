@@ -23,8 +23,9 @@ export default function ReportsPage() {
   const [appointments] = useState(() => db.getAppointments());
   const [quotes] = useState(() => db.getQuotes());
   const [executions] = useState(() => db.getExecutions());
-  const company = useMemo(() => db.getCompany(), []);
+  const companyLocal = useMemo(() => db.getCompany(), []);
   const { isPro } = useCompanyPlan();
+  const company = useMemo(() => ({ ...companyLocal, isPro }), [companyLocal, isPro]);
   const { showModal, setShowModal, blockedFeature, requiredTier } = useProGate();
 
   const [tab, setTab] = useState<TabType>('management');
