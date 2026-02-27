@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import ProUpgradeModal from "@/components/ProUpgradeModal";
 import { useProGate } from "@/hooks/use-pro-gate";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 
 const statusOptions = [
   { value: "operacional", label: "Operacional", icon: CheckCircle2, color: "text-green-600" },
@@ -35,8 +36,8 @@ function getMaintenanceUrgency(nextDate: string): { label: string; class: string
 }
 
 export default function EquipmentPage() {
-  const company = db.getCompany();
-  const isPremium = company.planTier === "premium";
+  const { planTier } = useCompanyPlan();
+  const isPremium = planTier === "premium";
   const { showModal, setShowModal, checkPro } = useProGate();
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [open, setOpen] = useState(false);

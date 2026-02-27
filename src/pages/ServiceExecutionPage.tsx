@@ -19,6 +19,7 @@ import {
   Share2, User,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 
 const Section = ({ id, icon, title, children, activeSection, setActiveSection }: { id: string; icon: React.ReactNode; title: string; children: React.ReactNode; activeSection: string; setActiveSection: (v: string) => void }) => {
   const isOpen = activeSection === id;
@@ -54,7 +55,7 @@ export default function ServiceExecutionPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [selectedTechnician, setSelectedTechnician] = useState("");
-  const isPro = useMemo(() => db.getCompany().isPro, []);
+  const { isPro } = useCompanyPlan();
   const company = useMemo(() => db.getCompany(), []);
 
   const appointment = useMemo(() => {

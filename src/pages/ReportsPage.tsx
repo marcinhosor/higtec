@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { generateServiceReportPDF } from "@/lib/pdf-quote";
 import ProUpgradeModal from "@/components/ProUpgradeModal";
 import { useProGate } from "@/hooks/use-pro-gate";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 
 type TabType = 'management' | 'report' | 'neighborhood' | 'clientMap';
 
@@ -23,7 +24,7 @@ export default function ReportsPage() {
   const [quotes] = useState(() => db.getQuotes());
   const [executions] = useState(() => db.getExecutions());
   const company = useMemo(() => db.getCompany(), []);
-  const isPro = company.planTier === 'pro' || company.planTier === 'premium';
+  const { isPro } = useCompanyPlan();
   const { showModal, setShowModal, blockedFeature, requiredTier } = useProGate();
 
   const [tab, setTab] = useState<TabType>('management');
