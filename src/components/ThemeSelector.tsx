@@ -9,6 +9,7 @@ type Props = {
   selectedId: string;
   onSelect: (id: string) => void;
   canChange: boolean;
+  isPro?: boolean;
   isPremium?: boolean;
   customTheme?: CustomTheme;
   onCustomTheme?: (theme: CustomTheme) => void;
@@ -42,7 +43,16 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-export default function ThemeSelector({ selectedId, onSelect, canChange, isPremium, customTheme, onCustomTheme }: Props) {
+/** Returns true if a hex color is "dark" (luminance < 0.45) */
+function isDark(hex: string): boolean {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return lum < 0.45;
+}
+
+export default function ThemeSelector({ selectedId, onSelect, canChange, isPro, isPremium, customTheme, onCustomTheme }: Props) {
   const [showCustom, setShowCustom] = useState(false);
   const [custom, setCustom] = useState<CustomTheme>(customTheme || DEFAULT_CUSTOM_THEME);
 
@@ -55,6 +65,10 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPremi
       onCustomTheme({ ...custom, enabled: true });
     }
   };
+
+  // PRO = 4 colors (primary, secondary, accent, background)
+  // PREMIUM = 6 colors (+ textColor, cardColor)
+  const canCustomize = isPro || isPremium;
 
   return (
     <div className="space-y-3">
@@ -91,10 +105,13 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPremi
               }`}
             >
               <div className="flex gap-1 shrink-0">
-                <div className="h-8 w-8 rounded-lg border" style={{ backgroundColor: p.primary }} />
-                <div className="h-8 w-8 rounded-lg border" style={{ backgroundColor: p.secondary }} />
-                <div className="h-8 w-8 rounded-lg border" style={{ backgroundColor: p.accent }} />
-                <div className="h-8 w-8 rounded-lg border" style={{ backgroundColor: p.background }} />
+                {[p.primary, p.secondary, p.accent, p.background].map((color, i) => (
+                  <div
+                    key={i}
+                    className="h-8 w-8 rounded-lg border border-white/20 shadow-sm"
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
               </div>
               <span className="text-sm font-medium text-foreground flex-1">{p.name}</span>
               {isSelected && (
@@ -108,8 +125,8 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPremi
         })}
       </div>
 
-      {/* Custom Color Picker - Premium Only */}
-      {isPremium && (
+      {/* Custom Color Picker - PRO and PREMIUM */}
+      {canCustomize && (
         <div className="mt-4 border-t pt-4">
           <button
             onClick={() => setShowCustom(!showCustom)}
@@ -124,7 +141,9 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPremi
             </div>
             <div className="flex-1">
               <span className="text-sm font-semibold text-foreground">🎨 Personalização Avançada</span>
-              <p className="text-xs text-muted-foreground">Configure cada cor manualmente com HEX</p>
+              <p className="text-xs text-muted-foreground">
+                {isPremium ? "Configure cada cor manualmente com HEX" : "Personalize as 4 cores principais"}
+              </p>
             </div>
             {selectedId === 'custom' && (
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
@@ -139,21 +158,27 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPremi
               <div className="grid grid-cols-2 gap-3">
                 <ColorField label="Primária (Botões)" value={custom.primary} onChange={v => updateCustom('primary', v)} />
                 <ColorField label="Secundária (Menus)" value={custom.secondary} onChange={v => updateCustom('secondary', v)} />
-                <ColorField label="CTA (Destaques)" value={custom.cta} onChange={v => updateCustom('cta', v)} />
+                <ColorField label="Destaque (Accent)" value={custom.accent} onChange={v => updateCustom('accent', v)} />
                 <ColorField label="Fundo" value={custom.background} onChange={v => updateCustom('background', v)} />
-                <ColorField label="Texto" value={custom.textColor} onChange={v => updateCustom('textColor', v)} />
-                <ColorField label="Cards" value={custom.cardColor} onChange={v => updateCustom('cardColor', v)} />
+                {/* Extra fields for PREMIUM only */}
+                {isPremium && (
+                  <>
+                    <ColorField label="CTA (Destaques)" value={custom.cta} onChange={v => updateCustom('cta', v)} />
+                    <ColorField label="Texto" value={custom.textColor} onChange={v => updateCustom('textColor', v)} />
+                    <ColorField label="Cards" value={custom.cardColor} onChange={v => updateCustom('cardColor', v)} />
+                  </>
+                )}
               </div>
 
               {/* Live preview */}
               <div className="mt-3 rounded-xl border p-3" style={{ backgroundColor: custom.background }}>
-                <p className="text-xs font-medium mb-2" style={{ color: custom.textColor }}>Pré-visualização:</p>
+                <p className="text-xs font-medium mb-2" style={{ color: isPremium ? custom.textColor : '#333' }}>Pré-visualização:</p>
                 <div className="flex gap-2">
                   <div className="rounded-lg px-3 py-1.5 text-xs font-medium text-white" style={{ backgroundColor: custom.primary }}>Botão</div>
-                  <div className="rounded-lg px-3 py-1.5 text-xs font-medium text-white" style={{ backgroundColor: custom.cta }}>CTA</div>
+                  <div className="rounded-lg px-3 py-1.5 text-xs font-medium text-white" style={{ backgroundColor: custom.accent }}>Accent</div>
                 </div>
-                <div className="mt-2 rounded-lg border p-2" style={{ backgroundColor: custom.cardColor }}>
-                  <p className="text-xs" style={{ color: custom.textColor }}>Card exemplo</p>
+                <div className="mt-2 rounded-lg border p-2" style={{ backgroundColor: isPremium ? custom.cardColor : '#fff' }}>
+                  <p className="text-xs" style={{ color: isPremium ? custom.textColor : '#333' }}>Card exemplo</p>
                   <div className="h-1.5 w-16 rounded-full mt-1" style={{ backgroundColor: custom.secondary }} />
                 </div>
               </div>
@@ -166,9 +191,9 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPremi
         </div>
       )}
 
-      {!isPremium && canChange && (
+      {!canCustomize && canChange && (
         <p className="text-xs text-muted-foreground text-center mt-2 italic">
-          🎨 Personalização avançada com color picker disponível no plano PREMIUM
+          🎨 Personalização avançada com color picker disponível no plano PRO
         </p>
       )}
     </div>
