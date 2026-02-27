@@ -7,6 +7,7 @@ import logo from "@/assets/logo_app.png";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import OnboardingBanner from "@/components/OnboardingBanner";
 import NotificationCenter from "@/components/NotificationCenter";
+import { useTheme } from "@/hooks/use-theme";
 
 const menuItems = [
   { path: "/clientes", icon: Users, label: "Clientes", desc: "Gerencie seus clientes" },
@@ -92,6 +93,7 @@ function getAlertStyles(level: MaintenanceAlert['level']) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [maintenanceAlerts, setMaintenanceAlerts] = useState<MaintenanceAlert[]>([]);
   const [equipmentAlerts, setEquipmentAlerts] = useState<Equipment[]>([]);

@@ -97,7 +97,7 @@
 
 @layer utilities {
   .gradient-primary {
-    background: linear-gradient(135deg, hsl(207 90% 54%), hsl(207 90% 40%));
+    background: linear-gradient(135deg, var(--gradient-from, hsl(207 90% 54%)), var(--gradient-to, hsl(207 90% 40%)));
   }
   .gradient-card {
     background: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 40% 98%));
