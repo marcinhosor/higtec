@@ -16,9 +16,8 @@ serve(async (req) => {
     const body = await req.json();
     console.log("Mercado Pago webhook received:", JSON.stringify(body));
 
-    const { type, data, action } = body;
+    const { type, data } = body;
 
-    // Only process payment events
     if (type !== "payment") {
       return new Response(JSON.stringify({ received: true, skipped: true }), {
         status: 200,
@@ -26,7 +25,20 @@ serve(async (req) => {
       });
     }
 
-    const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Read access token from admin_settings (database), fallback to env var
+    let accessToken = "";
+    const { data: tokenSetting } = await supabase
+      .from("admin_settings")
+      .select("setting_value")
+      .eq("setting_key", "mp_access_token")
+      .maybeSingle();
+
+    accessToken = tokenSetting?.setting_value || Deno.env.get("MERCADOPAGO_ACCESS_TOKEN") || "";
+
     if (!accessToken) {
       console.error("MERCADOPAGO_ACCESS_TOKEN not configured");
       return new Response(
@@ -35,7 +47,6 @@ serve(async (req) => {
       );
     }
 
-    // Fetch payment details from Mercado Pago API
     const paymentId = data?.id;
     if (!paymentId) {
       return new Response(JSON.stringify({ error: "No payment ID" }), {
@@ -46,9 +57,7 @@ serve(async (req) => {
 
     const mpResponse = await fetch(
       `https://api.mercadopago.com/v1/payments/${paymentId}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
+      { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
     if (!mpResponse.ok) {
@@ -68,13 +77,7 @@ serve(async (req) => {
       transaction_amount: payment.transaction_amount,
     }));
 
-    // Process payment based on status
     if (payment.status === "approved") {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-
-      // external_reference should contain the company_id
       const companyId = payment.external_reference;
       if (companyId) {
         const { error } = await supabase
