@@ -13,7 +13,6 @@ serve(async (req) => {
   }
 
   try {
-    // Verify user is admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -26,7 +25,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from token
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
@@ -36,7 +34,6 @@ serve(async (req) => {
       });
     }
 
-    // Check admin role
     const { data: isAdmin } = await supabase.rpc("has_role", {
       _user_id: user.id,
       _role: "admin",
@@ -51,10 +48,15 @@ serve(async (req) => {
 
     const body = await req.json();
 
-    if (req.method === "GET" || body.action === "get") {
-      // Return masked versions of current credentials
-      const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN") || "";
-      const publicKey = Deno.env.get("MERCADOPAGO_PUBLIC_KEY") || "";
+    // GET action - return current credentials status
+    if (body.action === "get") {
+      const { data: settings } = await supabase
+        .from("admin_settings")
+        .select("setting_key, setting_value")
+        .in("setting_key", ["mp_access_token", "mp_public_key"]);
+
+      const accessToken = settings?.find(s => s.setting_key === "mp_access_token")?.setting_value || "";
+      const publicKey = settings?.find(s => s.setting_key === "mp_public_key")?.setting_value || "";
 
       return new Response(
         JSON.stringify({
@@ -74,9 +76,7 @@ serve(async (req) => {
       );
     }
 
-    // Note: Deno.env.set is not persistent in edge functions.
-    // Secrets must be set via the Lovable Cloud secrets management.
-    // This endpoint validates the credentials format and confirms they should be updated.
+    // SAVE action - validate and store credentials
     const { access_token, public_key } = body;
 
     const errors: string[] = [];
@@ -100,11 +100,42 @@ serve(async (req) => {
       });
     }
 
+    // Upsert credentials into admin_settings
+    const upserts: Promise<any>[] = [];
+
+    if (access_token) {
+      upserts.push(
+        supabase.from("admin_settings").upsert(
+          { setting_key: "mp_access_token", setting_value: access_token, updated_at: new Date().toISOString() },
+          { onConflict: "setting_key" }
+        )
+      );
+    }
+
+    if (public_key) {
+      upserts.push(
+        supabase.from("admin_settings").upsert(
+          { setting_key: "mp_public_key", setting_value: public_key, updated_at: new Date().toISOString() },
+          { onConflict: "setting_key" }
+        )
+      );
+    }
+
+    const results = await Promise.all(upserts);
+    const upsertErrors = results.filter(r => r.error);
+
+    if (upsertErrors.length > 0) {
+      console.error("Upsert errors:", upsertErrors.map(r => r.error));
+      return new Response(
+        JSON.stringify({ error: "Erro ao salvar credenciais no banco de dados" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
       JSON.stringify({
-        message:
-          "Credenciais validadas. Para atualizar os segredos, utilize o painel de segredos do Lovable Cloud.",
-        validated: true,
+        message: "Credenciais salvas com sucesso!",
+        saved: true,
       }),
       {
         status: 200,

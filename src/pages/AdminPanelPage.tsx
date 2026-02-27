@@ -189,7 +189,7 @@ export default function AdminPanelPage() {
       });
   }, [isAdmin]);
 
-  const validateCredentials = async () => {
+  const saveCredentials = async () => {
     if (!mpAccessToken && !mpPublicKey) {
       toast.error("Preencha pelo menos um campo");
       return;
@@ -203,16 +203,26 @@ export default function AdminPanelPage() {
         },
       });
       if (error) {
-        toast.error("Erro ao validar credenciais");
+        toast.error("Erro ao salvar credenciais");
       } else if (data?.error) {
         toast.error(data.error);
       } else {
-        toast.success("Credenciais validadas! Atualize os segredos no painel do Lovable Cloud.");
+        toast.success("Credenciais salvas com sucesso!");
         setMpAccessToken("");
         setMpPublicKey("");
+        // Reload credential status
+        const { data: updated } = await supabase.functions.invoke("update-mp-credentials", {
+          body: { action: "get" },
+        });
+        if (updated) {
+          setMpAccessTokenSet(updated.access_token_set);
+          setMpAccessTokenPreview(updated.access_token_preview || "");
+          setMpPublicKeySet(updated.public_key_set);
+          setMpPublicKeyPreview(updated.public_key_preview || "");
+        }
       }
     } catch {
-      toast.error("Erro ao validar credenciais");
+      toast.error("Erro ao salvar credenciais");
     }
     setSavingCredentials(false);
   };
@@ -748,16 +758,16 @@ export default function AdminPanelPage() {
                   </div>
 
                   <Button
-                    onClick={validateCredentials}
+                    onClick={saveCredentials}
                     disabled={savingCredentials || (!mpAccessToken && !mpPublicKey)}
                     className="gap-2"
                   >
                     {savingCredentials ? (
                       <RefreshCw className="h-4 w-4 animate-spin" />
                     ) : (
-                      <CheckCircle className="h-4 w-4" />
+                      <Save className="h-4 w-4" />
                     )}
-                    Validar Credenciais
+                    Salvar Credenciais
                   </Button>
                 </div>
               </CardContent>
