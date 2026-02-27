@@ -101,12 +101,64 @@ export default function AdminPanelPage() {
     setLoadingData(false);
   };
 
+  // Mercado Pago credentials state
+  const [mpAccessToken, setMpAccessToken] = useState("");
+  const [mpPublicKey, setMpPublicKey] = useState("");
+  const [mpAccessTokenPreview, setMpAccessTokenPreview] = useState("");
+  const [mpPublicKeyPreview, setMpPublicKeyPreview] = useState("");
+  const [mpAccessTokenSet, setMpAccessTokenSet] = useState(false);
+  const [mpPublicKeySet, setMpPublicKeySet] = useState(false);
+  const [savingCredentials, setSavingCredentials] = useState(false);
+
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
   const webhookUrl = `https://${projectId}.supabase.co/functions/v1/mercadopago-webhook`;
 
   const copyWebhookUrl = () => {
     navigator.clipboard.writeText(webhookUrl);
     toast.success("URL do webhook copiada!");
+  };
+
+  // Load current credential status
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.functions
+      .invoke("update-mp-credentials", { body: { action: "get" } })
+      .then(({ data, error }) => {
+        if (data && !error) {
+          setMpAccessTokenSet(data.access_token_set);
+          setMpAccessTokenPreview(data.access_token_preview || "");
+          setMpPublicKeySet(data.public_key_set);
+          setMpPublicKeyPreview(data.public_key_preview || "");
+        }
+      });
+  }, [isAdmin]);
+
+  const validateCredentials = async () => {
+    if (!mpAccessToken && !mpPublicKey) {
+      toast.error("Preencha pelo menos um campo");
+      return;
+    }
+    setSavingCredentials(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("update-mp-credentials", {
+        body: {
+          access_token: mpAccessToken || undefined,
+          public_key: mpPublicKey || undefined,
+        },
+      });
+      if (error) {
+        toast.error("Erro ao validar credenciais");
+      } else if (data?.error) {
+        toast.error(data.error);
+      } else {
+        toast.success("Credenciais validadas! Atualize os segredos no painel do Lovable Cloud.");
+        setMpAccessToken("");
+        setMpPublicKey("");
+      }
+    } catch {
+      toast.error("Erro ao validar credenciais");
+    }
+    setSavingCredentials(false);
   };
 
   const filteredCompanies = companies.filter((c) => {
@@ -453,23 +505,80 @@ export default function AdminPanelPage() {
                   </Button>
                 </div>
 
-                <div className="space-y-3 border-t pt-4">
+                <div className="space-y-4 border-t pt-4">
                   <h3 className="font-semibold text-foreground flex items-center gap-2">
                     <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                    Credenciais necessárias
+                    Credenciais do Gateway
                   </h3>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="p-3 rounded-lg border">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Access Token</p>
+                  <p className="text-xs text-muted-foreground">
+                    Encontre suas credenciais em{" "}
+                    <a
+                      href="https://www.mercadopago.com.br/developers/panel/app"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline"
+                    >
+                      Suas integrações → Credenciais
+                    </a>
+                  </p>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {/* Access Token */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Access Token (Secret)</label>
+                      {mpAccessTokenSet && (
+                        <p className="text-xs text-muted-foreground font-mono">
+                          Atual: {mpAccessTokenPreview}
+                        </p>
+                      )}
+                      <Input
+                        type="password"
+                        placeholder="APP_USR-..."
+                        value={mpAccessToken}
+                        onChange={(e) => setMpAccessToken(e.target.value)}
+                      />
                       <p className="text-xs text-muted-foreground">Token privado para processar pagamentos</p>
-                      <Badge variant="secondary" className="mt-2 text-xs">Configurado</Badge>
+                      {mpAccessTokenSet ? (
+                        <Badge variant="secondary" className="text-xs">✓ Configurado</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-xs">Não configurado</Badge>
+                      )}
                     </div>
-                    <div className="p-3 rounded-lg border">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Public Key</p>
+
+                    {/* Public Key */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Public Key</label>
+                      {mpPublicKeySet && (
+                        <p className="text-xs text-muted-foreground font-mono">
+                          Atual: {mpPublicKeyPreview}
+                        </p>
+                      )}
+                      <Input
+                        placeholder="APP_USR-..."
+                        value={mpPublicKey}
+                        onChange={(e) => setMpPublicKey(e.target.value)}
+                      />
                       <p className="text-xs text-muted-foreground">Chave pública para o checkout</p>
-                      <Badge variant="secondary" className="mt-2 text-xs">Configurado</Badge>
+                      {mpPublicKeySet ? (
+                        <Badge variant="secondary" className="text-xs">✓ Configurado</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-xs">Não configurado</Badge>
+                      )}
                     </div>
                   </div>
+
+                  <Button
+                    onClick={validateCredentials}
+                    disabled={savingCredentials || (!mpAccessToken && !mpPublicKey)}
+                    className="gap-2"
+                  >
+                    {savingCredentials ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4" />
+                    )}
+                    Validar Credenciais
+                  </Button>
                 </div>
               </CardContent>
             </Card>
