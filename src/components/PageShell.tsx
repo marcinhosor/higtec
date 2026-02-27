@@ -1,7 +1,15 @@
 import { ReactNode } from "react";
 import BottomNav from "./BottomNav";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTechnician } from "@/contexts/TechnicianContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface PageShellProps {
   title: string;
@@ -12,6 +20,17 @@ interface PageShellProps {
 
 export default function PageShell({ title, children, showBack, action }: PageShellProps) {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
+  const { isTechnician, logoutTechnician } = useTechnician();
+
+  const handleLogout = async () => {
+    if (isTechnician) {
+      logoutTechnician();
+    } else {
+      await signOut();
+    }
+    navigate("/login", { replace: true });
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-background pb-20">
@@ -25,7 +44,16 @@ export default function PageShell({ title, children, showBack, action }: PageShe
             )}
             <h1 className="text-lg font-bold text-foreground">{title}</h1>
           </div>
-          {action}
+          <div className="flex items-center gap-2">
+            {action}
+            <button
+              onClick={handleLogout}
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="Sair"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </header>
       <main className="flex-1 px-4 py-4">{children}</main>
