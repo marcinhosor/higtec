@@ -56,6 +56,7 @@ export default function SettingsPage() {
   const handleThemeSelect = (themeId: string) => {
     setCompany(prev => ({ ...prev, selectedThemeId: themeId }));
     setTheme(themeId);
+    toast.success("Paleta aplicada com sucesso!");
   };
 
 

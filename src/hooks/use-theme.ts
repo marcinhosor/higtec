@@ -30,9 +30,14 @@ export function getActiveTheme(): ThemePalette {
 export function applyThemeToDOM(theme: ThemePalette) {
   const root = document.documentElement;
   root.style.setProperty('--primary', hexToHsl(theme.primary));
-  // Keep foreground readable
   root.style.setProperty('--ring', hexToHsl(theme.primary));
   root.style.setProperty('--sidebar-primary', hexToHsl(theme.primary));
+  root.style.setProperty('--accent', hexToHsl(theme.accent));
+  root.style.setProperty('--theme-secondary', hexToHsl(theme.secondary));
+  root.style.setProperty('--theme-bg', hexToHsl(theme.background));
+  // Update gradient-primary dynamically
+  root.style.setProperty('--gradient-from', theme.primary);
+  root.style.setProperty('--gradient-to', theme.accent);
 }
 
 export function useTheme() {
