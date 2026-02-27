@@ -41,6 +41,16 @@ export default function SettingsPage() {
     };
   });
 
+  // Sync local company state with database plan tier
+  useEffect(() => {
+    if (!dbIsPro && !isTrialActive) return;
+    setCompany(prev => ({
+      ...prev,
+      isPro: dbIsPro,
+      planTier: dbPlanTier,
+    }));
+  }, [dbIsPro, dbPlanTier, isTrialActive]);
+
   const [collaborators, setCollaborators] = useState<Collaborator[]>(() => db.getCollaborators());
   const [collabOpen, setCollabOpen] = useState(false);
   const [editingCollab, setEditingCollab] = useState<Collaborator | null>(null);
