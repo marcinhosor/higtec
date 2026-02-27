@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import PageShell from "@/components/PageShell";
 import { db, Product, deductStock } from "@/lib/storage";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -12,13 +13,11 @@ export default function CalculatorPage() {
   const [dilution, setDilution] = useState("");
   const [volume, setVolume] = useState("");
   const [result, setResult] = useState<number | null>(null);
-  const [isPro, setIsPro] = useState(false);
+  const { isPro } = useCompanyPlan();
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProductId, setSelectedProductId] = useState("");
 
   useEffect(() => {
-    const t = db.getCompany().planTier;
-    setIsPro(t === 'pro' || t === 'premium');
     setProducts(db.getProducts());
   }, []);
 

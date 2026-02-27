@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import PageShell from "@/components/PageShell";
 import { db, Product, Manufacturer, generateId, getPhSuggestion, calculateStockStatus, restockProduct } from "@/lib/storage";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign, PackagePlus, AlertTriangle, Package, Check, ChevronsUpDown, Factory, Edit } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -52,10 +53,7 @@ export default function ProductsPage() {
   const [open, setOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState<string | null>(null);
   const [restockForm, setRestockForm] = useState({ volume: "", price: "" });
-  const [isPro, setIsPro] = useState(() => {
-    const t = db.getCompany().planTier;
-    return t === 'pro' || t === 'premium';
-  });
+  const { isPro } = useCompanyPlan();
   const [mfgOpen, setMfgOpen] = useState(false);
   const [mfgSearch, setMfgSearch] = useState("");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -65,8 +63,6 @@ export default function ProductsPage() {
   const reload = () => {
     setProducts(db.getProducts());
     setManufacturers(db.getManufacturers());
-    const t = db.getCompany().planTier;
-    setIsPro(t === 'pro' || t === 'premium');
   };
 
   useEffect(() => {

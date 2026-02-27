@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
 import { TrendingUp, TrendingDown, DollarSign, Users, Wrench, Package, AlertTriangle, Crown, Clock, Star } from "lucide-react";
 import ProUpgradeModal from "@/components/ProUpgradeModal";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const CHART_COLORS = ["hsl(207 90% 54%)", "hsl(152 60% 46%)", "hsl(38 92% 50%)", "hsl(0 84% 60%)", "hsl(270 60% 55%)", "hsl(180 60% 45%)"];
@@ -15,8 +16,8 @@ function formatCurrency(v: number) {
 }
 
 export default function StrategicDashboardPage() {
-  const company = db.getCompany();
-  const isPremium = company.planTier === "premium";
+  const { planTier } = useCompanyPlan();
+  const isPremium = planTier === "premium";
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear().toString());
 
