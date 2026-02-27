@@ -5,15 +5,59 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Shield, Webhook, CreditCard, ExternalLink, CheckCircle, AlertCircle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Shield, Webhook, CreditCard, ExternalLink, CheckCircle, AlertCircle,
+  Users, Building2, Search, RefreshCw, Crown, Eye,
+} from "lucide-react";
 import { toast } from "sonner";
+
+interface CompanyRow {
+  id: string;
+  name: string;
+  cnpj: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  state: string | null;
+  plan_tier: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MemberRow {
+  id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+  company_id: string;
+  profile?: {
+    full_name: string | null;
+    phone: string | null;
+    avatar_url: string | null;
+  };
+  company?: {
+    name: string;
+  };
+}
 
 export default function AdminPanelPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [webhookStatus, setWebhookStatus] = useState<"unknown" | "configured" | "pending">("unknown");
+
+  // Data states
+  const [companies, setCompanies] = useState<CompanyRow[]>([]);
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [loadingData, setLoadingData] = useState(false);
+  const [searchCompany, setSearchCompany] = useState("");
+  const [searchMember, setSearchMember] = useState("");
+  const [selectedCompany, setSelectedCompany] = useState<CompanyRow | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -29,12 +73,85 @@ export default function AdminPanelPage() {
       });
   }, [user, navigate]);
 
+  useEffect(() => {
+    if (isAdmin) loadAllData();
+  }, [isAdmin]);
+
+  const loadAllData = async () => {
+    setLoadingData(true);
+    try {
+      const [companiesRes, membersRes] = await Promise.all([
+        supabase.from("companies").select("*").order("created_at", { ascending: false }),
+        supabase.from("company_memberships").select("*, profiles:user_id(full_name, phone, avatar_url)").order("created_at", { ascending: false }),
+      ]);
+
+      if (companiesRes.data) setCompanies(companiesRes.data as CompanyRow[]);
+      if (membersRes.data) {
+        // Map the joined data
+        const mapped = (membersRes.data as any[]).map((m) => ({
+          ...m,
+          profile: m.profiles || null,
+        }));
+        setMembers(mapped);
+      }
+    } catch (err) {
+      console.error("Error loading admin data:", err);
+      toast.error("Erro ao carregar dados");
+    }
+    setLoadingData(false);
+  };
+
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
   const webhookUrl = `https://${projectId}.supabase.co/functions/v1/mercadopago-webhook`;
 
   const copyWebhookUrl = () => {
     navigator.clipboard.writeText(webhookUrl);
     toast.success("URL do webhook copiada!");
+  };
+
+  const filteredCompanies = companies.filter((c) => {
+    const q = searchCompany.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.email || "").toLowerCase().includes(q) ||
+      (c.cnpj || "").includes(q) ||
+      (c.city || "").toLowerCase().includes(q)
+    );
+  });
+
+  const filteredMembers = members.filter((m) => {
+    const q = searchMember.toLowerCase();
+    return (
+      (m.profile?.full_name || "").toLowerCase().includes(q) ||
+      (m.profile?.phone || "").includes(q) ||
+      m.role.toLowerCase().includes(q)
+    );
+  });
+
+  const companyMembers = selectedCompany
+    ? members.filter((m) => m.company_id === selectedCompany.id)
+    : [];
+
+  const planStats = {
+    free: companies.filter((c) => c.plan_tier === "free").length,
+    pro: companies.filter((c) => c.plan_tier === "pro").length,
+    premium: companies.filter((c) => c.plan_tier === "premium").length,
+  };
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  const getPlanBadge = (tier: string) => {
+    const variants: Record<string, string> = {
+      free: "bg-muted text-muted-foreground",
+      pro: "bg-primary/10 text-primary",
+      premium: "bg-accent text-accent-foreground",
+    };
+    return (
+      <Badge className={variants[tier] || variants.free}>
+        {tier.toUpperCase()}
+      </Badge>
+    );
   };
 
   if (loading || !isAdmin) {
@@ -47,99 +164,320 @@ export default function AdminPanelPage() {
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Shield className="h-8 w-8 text-primary" />
           <div>
             <h1 className="text-2xl font-bold text-foreground">Painel Administrativo</h1>
-            <p className="text-sm text-muted-foreground">Configuracoes globais do sistema</p>
+            <p className="text-sm text-muted-foreground">Visão geral de todas as empresas e usuários</p>
           </div>
           <Badge variant="outline" className="ml-auto">Admin</Badge>
         </div>
 
-        {/* Mercado Pago Integration */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5 text-primary" />
-              <CardTitle>Mercado Pago</CardTitle>
-            </div>
-            <CardDescription>Gateway de pagamento para assinaturas e cobranças</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Status */}
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
-              <CheckCircle className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">Credenciais configuradas com seguranca no servidor</span>
-            </div>
-
-            {/* Webhook Configuration */}
-            <div className="space-y-3">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
               <div className="flex items-center gap-2">
-                <Webhook className="h-4 w-4 text-muted-foreground" />
-                <h3 className="font-semibold text-foreground">Configuracao do Webhook</h3>
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Empresas</span>
               </div>
-
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>Para receber notificacoes de pagamento em tempo real, configure o webhook no painel do Mercado Pago:</p>
-                <ol className="list-decimal list-inside space-y-1 ml-2">
-                  <li>Acesse <strong>Suas integracoes</strong> no painel do Mercado Pago</li>
-                  <li>Selecione sua aplicacao e va em <strong>Webhooks</strong></li>
-                  <li>Adicione a URL abaixo como URL de notificacao</li>
-                  <li>Selecione os eventos: <strong>payment</strong></li>
-                </ol>
+              <p className="text-2xl font-bold text-foreground mt-1">{companies.length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Usuários</span>
               </div>
-
-              <div className="flex items-center gap-2 p-3 rounded-lg border bg-card">
-                <code className="flex-1 text-xs break-all font-mono text-foreground">
-                  {webhookUrl}
-                </code>
-                <Button size="sm" variant="outline" onClick={copyWebhookUrl}>
-                  Copiar
-                </Button>
+              <p className="text-2xl font-bold text-foreground mt-1">{members.length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2">
+                <Crown className="h-4 w-4 text-primary" />
+                <span className="text-xs text-muted-foreground">PRO</span>
               </div>
+              <p className="text-2xl font-bold text-primary mt-1">{planStats.pro}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2">
+                <Crown className="h-4 w-4 text-accent-foreground" />
+                <span className="text-xs text-muted-foreground">Premium</span>
+              </div>
+              <p className="text-2xl font-bold text-foreground mt-1">{planStats.premium}</p>
+            </CardContent>
+          </Card>
+        </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => window.open("https://www.mercadopago.com.br/developers/panel/app", "_blank")}
-              >
-                <ExternalLink className="h-3 w-3" />
-                Abrir painel Mercado Pago
+        <Tabs defaultValue="companies" className="w-full">
+          <TabsList className="w-full grid grid-cols-3">
+            <TabsTrigger value="companies">Empresas</TabsTrigger>
+            <TabsTrigger value="members">Usuários</TabsTrigger>
+            <TabsTrigger value="payments">Pagamentos</TabsTrigger>
+          </TabsList>
+
+          {/* Companies Tab */}
+          <TabsContent value="companies" className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar empresa por nome, email, CNPJ ou cidade..."
+                  value={searchCompany}
+                  onChange={(e) => setSearchCompany(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button variant="outline" size="icon" onClick={loadAllData} disabled={loadingData}>
+                <RefreshCw className={`h-4 w-4 ${loadingData ? "animate-spin" : ""}`} />
               </Button>
             </div>
 
-            {/* Instructions */}
-            <div className="space-y-3 border-t pt-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                Credenciais necessarias
-              </h3>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="p-3 rounded-lg border">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Access Token</p>
-                  <p className="text-xs text-muted-foreground">
-                    Token privado para processar pagamentos. Encontre em: Suas integracoes &gt; Credenciais de producao
-                  </p>
-                  <Badge variant="secondary" className="mt-2 text-xs">Configurado</Badge>
-                </div>
-                <div className="p-3 rounded-lg border">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Public Key</p>
-                  <p className="text-xs text-muted-foreground">
-                    Chave publica para o checkout. Encontre em: Suas integracoes &gt; Credenciais de producao
-                  </p>
-                  <Badge variant="secondary" className="mt-2 text-xs">Configurado</Badge>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead className="hidden md:table-cell">Cidade/UF</TableHead>
+                      <TableHead>Plano</TableHead>
+                      <TableHead className="hidden md:table-cell">Cadastro</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCompanies.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          {loadingData ? "Carregando..." : "Nenhuma empresa encontrada"}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredCompanies.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium text-foreground">{c.name}</p>
+                              {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
+                              {c.cnpj && <p className="text-xs text-muted-foreground">CNPJ: {c.cnpj}</p>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell text-muted-foreground">
+                            {[c.city, c.state].filter(Boolean).join("/") || "—"}
+                          </TableCell>
+                          <TableCell>{getPlanBadge(c.plan_tier)}</TableCell>
+                          <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                            {formatDate(c.created_at)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedCompany(selectedCompany?.id === c.id ? null : c)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
 
-        {/* Back button */}
+            {/* Company Detail */}
+            {selectedCompany && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">{selectedCompany.name}</CardTitle>
+                  <CardDescription>Detalhes da empresa e membros</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">CNPJ</p>
+                      <p className="font-medium text-foreground">{selectedCompany.cnpj || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Email</p>
+                      <p className="font-medium text-foreground">{selectedCompany.email || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Telefone</p>
+                      <p className="font-medium text-foreground">{selectedCompany.phone || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Cidade/UF</p>
+                      <p className="font-medium text-foreground">
+                        {[selectedCompany.city, selectedCompany.state].filter(Boolean).join("/") || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Plano</p>
+                      {getPlanBadge(selectedCompany.plan_tier)}
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Cadastro</p>
+                      <p className="font-medium text-foreground">{formatDate(selectedCompany.created_at)}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-foreground mb-2">Membros ({companyMembers.length})</h4>
+                    {companyMembers.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Nenhum membro encontrado</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {companyMembers.map((m) => (
+                          <div key={m.id} className="flex items-center justify-between p-2 rounded-lg border">
+                            <div>
+                              <p className="font-medium text-sm text-foreground">
+                                {m.profile?.full_name || "Sem nome"}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{m.profile?.phone || "—"}</p>
+                            </div>
+                            <Badge variant="outline">{m.role}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Members Tab */}
+          <TabsContent value="members" className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar usuário por nome, telefone ou role..."
+                value={searchMember}
+                onChange={(e) => setSearchMember(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Usuário</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead className="hidden md:table-cell">Telefone</TableHead>
+                      <TableHead className="hidden md:table-cell">Desde</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMembers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                          Nenhum usuário encontrado
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredMembers.map((m) => (
+                        <TableRow key={m.id}>
+                          <TableCell>
+                            <p className="font-medium text-foreground">{m.profile?.full_name || "Sem nome"}</p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{m.role}</Badge>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell text-muted-foreground">
+                            {m.profile?.phone || "—"}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                            {formatDate(m.created_at)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Payments Tab */}
+          <TabsContent value="payments" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-primary" />
+                  <CardTitle>Mercado Pago</CardTitle>
+                </div>
+                <CardDescription>Gateway de pagamento para assinaturas e cobrançass</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
+                  <CheckCircle className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">Credenciais configuradas com segurança no servidor</span>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Webhook className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="font-semibold text-foreground">Configuração do Webhook</h3>
+                  </div>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>Para receber notificações de pagamento em tempo real:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2">
+                      <li>Acesse <strong>Suas integrações</strong> no painel do Mercado Pago</li>
+                      <li>Selecione sua aplicação e vá em <strong>Webhooks</strong></li>
+                      <li>Adicione a URL abaixo como URL de notificação</li>
+                      <li>Selecione os eventos: <strong>payment</strong></li>
+                    </ol>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-lg border bg-card">
+                    <code className="flex-1 text-xs break-all font-mono text-foreground">{webhookUrl}</code>
+                    <Button size="sm" variant="outline" onClick={copyWebhookUrl}>Copiar</Button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => window.open("https://www.mercadopago.com.br/developers/panel/app", "_blank")}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Abrir painel Mercado Pago
+                  </Button>
+                </div>
+
+                <div className="space-y-3 border-t pt-4">
+                  <h3 className="font-semibold text-foreground flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    Credenciais necessárias
+                  </h3>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="p-3 rounded-lg border">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Access Token</p>
+                      <p className="text-xs text-muted-foreground">Token privado para processar pagamentos</p>
+                      <Badge variant="secondary" className="mt-2 text-xs">Configurado</Badge>
+                    </div>
+                    <div className="p-3 rounded-lg border">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Public Key</p>
+                      <p className="text-xs text-muted-foreground">Chave pública para o checkout</p>
+                      <Badge variant="secondary" className="mt-2 text-xs">Configurado</Badge>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
         <Button variant="ghost" onClick={() => navigate("/")}>
-          Voltar ao inicio
+          Voltar ao início
         </Button>
       </div>
     </div>
