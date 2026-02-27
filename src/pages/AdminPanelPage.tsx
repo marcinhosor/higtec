@@ -61,6 +61,13 @@ export default function AdminPanelPage() {
   const [settingPassword, setSettingPassword] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
 
+  // Recovery states
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryAuthPassword, setRecoveryAuthPassword] = useState("");
+  const [recoveryNewPassword, setRecoveryNewPassword] = useState("");
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState("");
+  const [recovering, setRecovering] = useState(false);
+
   // Data states
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -108,6 +115,46 @@ export default function AdminPanelPage() {
     }
     setPasswordInput("");
     setVerifyingPassword(false);
+  };
+
+  const handleRecoverPassword = async () => {
+    if (!user?.email || !recoveryAuthPassword.trim()) {
+      toast.error("Informe sua senha de login");
+      return;
+    }
+    if (recoveryNewPassword.length < 6) {
+      toast.error("A nova senha deve ter pelo menos 6 caracteres");
+      return;
+    }
+    if (recoveryNewPassword !== recoveryConfirmPassword) {
+      toast.error("As senhas não coincidem");
+      return;
+    }
+    setRecovering(true);
+    // Re-authenticate with Supabase Auth to prove identity
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: recoveryAuthPassword,
+    });
+    if (authError) {
+      toast.error("Senha de login incorreta");
+      setRecovering(false);
+      return;
+    }
+    // Now reset the admin password
+    const { data, error } = await supabase.rpc("set_admin_password", { _password: recoveryNewPassword });
+    if (error || !data) {
+      toast.error("Erro ao redefinir senha do painel");
+    } else {
+      toast.success("Senha do painel redefinida com sucesso!");
+      setHasPassword(true);
+      setIsUnlocked(true);
+      setShowRecovery(false);
+      setRecoveryAuthPassword("");
+      setRecoveryNewPassword("");
+      setRecoveryConfirmPassword("");
+    }
+    setRecovering(false);
   };
 
   const handleSetPassword = async () => {
@@ -282,6 +329,59 @@ export default function AdminPanelPage() {
 
   // Password gate - if password exists and not unlocked
   if (hasPassword && !isUnlocked) {
+    if (showRecovery) {
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-background p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                <KeyRound className="h-6 w-6 text-primary" />
+              </div>
+              <CardTitle>Recuperar Senha do Painel</CardTitle>
+              <CardDescription>
+                Confirme sua identidade com a senha de login da sua conta e defina uma nova senha para o painel admin.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input
+                type="password"
+                placeholder="Sua senha de login (conta)"
+                value={recoveryAuthPassword}
+                onChange={(e) => setRecoveryAuthPassword(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Nova senha do painel (mín. 6 caracteres)"
+                value={recoveryNewPassword}
+                onChange={(e) => setRecoveryNewPassword(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Confirmar nova senha"
+                value={recoveryConfirmPassword}
+                onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+              />
+              <Button
+                className="w-full gap-2"
+                onClick={handleRecoverPassword}
+                disabled={recovering || !recoveryAuthPassword.trim() || !recoveryNewPassword.trim()}
+              >
+                {recovering ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Redefinir Senha do Painel
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={() => setShowRecovery(false)}>
+                Voltar
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div className="flex items-center justify-center min-h-screen bg-background p-4">
         <Card className="w-full max-w-md">
@@ -312,6 +412,13 @@ export default function AdminPanelPage() {
               )}
               Desbloquear
             </Button>
+            <button
+              type="button"
+              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowRecovery(true)}
+            >
+              Esqueci minha senha
+            </button>
             <Button variant="ghost" className="w-full" onClick={() => navigate("/")}>
               Voltar
             </Button>
