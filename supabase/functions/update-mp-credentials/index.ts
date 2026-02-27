@@ -86,11 +86,11 @@ serve(async (req) => {
     if (public_key !== undefined && typeof public_key !== "string") {
       errors.push("Public Key deve ser uma string");
     }
-    if (access_token && !access_token.startsWith("APP_USR-")) {
-      errors.push("Access Token inválido — deve começar com APP_USR-");
+    if (access_token && !access_token.startsWith("APP_USR-") && !access_token.startsWith("TEST-")) {
+      errors.push("Access Token inválido — deve começar com APP_USR- ou TEST-");
     }
-    if (public_key && !public_key.startsWith("APP_USR-")) {
-      errors.push("Public Key inválida — deve começar com APP_USR-");
+    if (public_key && !public_key.startsWith("APP_USR-") && !public_key.startsWith("TEST-")) {
+      errors.push("Public Key inválida — deve começar com APP_USR- ou TEST-");
     }
 
     if (errors.length > 0) {
