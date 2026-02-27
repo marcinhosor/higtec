@@ -98,6 +98,11 @@ export default function Dashboard() {
   const [maintenanceAlerts, setMaintenanceAlerts] = useState<MaintenanceAlert[]>([]);
   const [equipmentAlerts, setEquipmentAlerts] = useState<Equipment[]>([]);
 
+  const company = useMemo(() => db.getCompany(), []);
+  const isPro = company.isPro || company.planTier === 'pro' || company.planTier === 'premium';
+  const companyLogo = isPro && company.logo ? company.logo : null;
+  const companyName = isPro && company.name ? company.name : null;
+
   useEffect(() => {
     setLowStockProducts(getLowStockProducts());
     setMaintenanceAlerts(getMaintenanceAlerts());
@@ -112,10 +117,10 @@ export default function Dashboard() {
         <div className="absolute top-4 right-4">
           <NotificationCenter />
         </div>
-        <img src={logo} alt="Hig Clean Tec" className="mx-auto mb-3 h-24 w-24 rounded-2xl bg-card/10 object-contain p-2" />
-        <h1 className="text-2xl font-extrabold text-primary-foreground tracking-tight">Hig Clean Tec</h1>
+        <img src={companyLogo || logo} alt={companyName || "Hig Clean Tec"} className="mx-auto mb-3 h-24 w-24 rounded-2xl bg-card/10 object-contain p-2" />
+        <h1 className="text-2xl font-extrabold text-primary-foreground tracking-tight">{companyName || "Hig Clean Tec"}</h1>
         <p className="mt-1 text-sm text-primary-foreground/80 font-medium">
-          Gestão Inteligente para Higienização Profissional
+          {companyName ? "Gestão Profissional" : "Gestão Inteligente para Higienização Profissional"}
         </p>
       </div>
 
