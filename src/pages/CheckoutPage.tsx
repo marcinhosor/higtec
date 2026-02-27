@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles, Loader2 } from "lucide-react";
+import { Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles, Loader2, CreditCard } from "lucide-react";
 import { startTrial, trackEvent, getSubscription } from "@/lib/analytics";
 import { db } from "@/lib/storage";
 import { useToast } from "@/hooks/use-toast";
@@ -63,29 +63,38 @@ const plans = [
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { user } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<"pro" | "premium">("pro");
   const sub = getSubscription();
-  const [mpReady, setMpReady] = useState(false);
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [loadingMp, setLoadingMp] = useState(true);
-  const paymentBrickRef = useRef<HTMLDivElement>(null);
-  const brickControllerRef = useRef<any>(null);
+  const [creatingPreference, setCreatingPreference] = useState(false);
 
-  // Fetch MP public key from admin_settings
+  // Handle return from MP checkout
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (status === "approved") {
+      toast({ title: "🎉 Pagamento aprovado!", description: "Seu plano será ativado em instantes." });
+      navigate("/");
+    } else if (status === "failure") {
+      toast({ title: "Pagamento não aprovado", description: "Tente novamente ou use outro método.", variant: "destructive" });
+    } else if (status === "pending") {
+      toast({ title: "⏳ Pagamento pendente", description: "Aguardando confirmação do pagamento." });
+    }
+  }, [searchParams]);
+
+  // Fetch MP public key
   useEffect(() => {
     const fetchPublicKey = async () => {
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from("admin_settings")
           .select("setting_value")
           .eq("setting_key", "mp_public_key")
           .maybeSingle();
-
-        if (data?.setting_value) {
-          setPublicKey(data.setting_value);
-        }
+        if (data?.setting_value) setPublicKey(data.setting_value);
       } catch (err) {
         console.error("Error fetching MP public key:", err);
       } finally {
@@ -95,18 +104,51 @@ export default function CheckoutPage() {
     fetchPublicKey();
   }, []);
 
-  // Initialize MercadoPago SDK when public key is available
+  // Initialize MP SDK
   useEffect(() => {
     if (!publicKey || !window.MercadoPago) return;
-
     try {
-      const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
-      setMpReady(true);
-      console.log("MercadoPago SDK initialized successfully");
+      new window.MercadoPago(publicKey, { locale: "pt-BR" });
+      console.log("MercadoPago SDK initialized");
     } catch (err) {
       console.error("Error initializing MercadoPago:", err);
     }
   }, [publicKey]);
+
+  const handlePayment = useCallback(async () => {
+    if (!user) {
+      toast({ title: "Faça login para continuar", variant: "destructive" });
+      navigate("/login");
+      return;
+    }
+
+    setCreatingPreference(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-mp-preference", {
+        body: { plan: selectedPlan },
+      });
+
+      if (error || !data?.init_point) {
+        throw new Error(error?.message || "Erro ao criar preferência");
+      }
+
+      trackEvent("checkout_started", { plan: selectedPlan });
+
+      // Redirect to Mercado Pago checkout
+      // Use sandbox_init_point for test keys, init_point for production
+      const checkoutUrl = data.sandbox_init_point || data.init_point;
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      console.error("Payment error:", err);
+      toast({
+        title: "Erro ao iniciar pagamento",
+        description: err.message || "Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingPreference(false);
+    }
+  }, [selectedPlan, user]);
 
   const handleStartTrial = () => {
     startTrial();
@@ -120,6 +162,7 @@ export default function CheckoutPage() {
   };
 
   const selected = plans.find((p) => p.id === selectedPlan)!;
+  const canTrial = sub.subscriptionStatus !== "trial" && sub.subscriptionStatus !== "active";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-muted/30 to-background text-foreground">
@@ -143,11 +186,11 @@ export default function CheckoutPage() {
             </span>
           </h1>
           <p className="mt-3 text-muted-foreground max-w-lg mx-auto">
-            Compare os recursos e comece com 7 dias grátis. Cancele quando quiser.
+            Compare os recursos e comece com 7 dias grátis ou assine agora.
           </p>
         </div>
 
-        {/* Plan cards side by side */}
+        {/* Plan cards */}
         <div className="grid gap-5 sm:grid-cols-2 mb-10">
           {plans.map((plan) => {
             const isSelected = selectedPlan === plan.id;
@@ -168,10 +211,7 @@ export default function CheckoutPage() {
                   </div>
                 )}
                 <div className="flex items-center gap-3 mb-3">
-                  <div
-                    className="flex h-11 w-11 items-center justify-center rounded-xl"
-                    style={{ backgroundColor: `${plan.accent}20` }}
-                  >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl" style={{ backgroundColor: `${plan.accent}20` }}>
                     <Icon className="h-6 w-6" style={{ color: plan.accent }} />
                   </div>
                   <div>
@@ -204,12 +244,7 @@ export default function CheckoutPage() {
             <div className="p-3" style={{ color: "hsl(270,60%,55%)" }}>Premium</div>
           </div>
           {features.map((f, i) => (
-            <div
-              key={f.label}
-              className={`grid grid-cols-[1fr_80px_80px_80px] sm:grid-cols-[1fr_100px_100px_100px] items-center text-center ${
-                i % 2 === 0 ? "bg-transparent" : "bg-muted/20"
-              }`}
-            >
+            <div key={f.label} className={`grid grid-cols-[1fr_80px_80px_80px] sm:grid-cols-[1fr_100px_100px_100px] items-center text-center ${i % 2 === 0 ? "bg-transparent" : "bg-muted/20"}`}>
               <div className="p-3 text-left text-sm">{f.label}</div>
               <CellIcon value={f.free} />
               <CellIcon value={f.pro} />
@@ -225,43 +260,55 @@ export default function CheckoutPage() {
           <p className="mt-1 text-sm text-muted-foreground">Cancele quando quiser. Sem compromisso.</p>
         </div>
 
-        {/* MercadoPago Status */}
-        {loadingMp ? (
+        {/* MP Status */}
+        {loadingMp && (
           <div className="flex items-center justify-center gap-2 mb-4 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Carregando gateway de pagamento...
           </div>
-        ) : mpReady ? (
-          <div className="mb-4 rounded-xl border border-[hsl(152,60%,50%)]/30 bg-[hsl(152,60%,50%)]/5 p-3 text-center text-sm text-[hsl(152,60%,50%)]">
-            ✅ Mercado Pago conectado — pagamentos habilitados
-          </div>
-        ) : null}
-
-        {/* Payment Brick container */}
-        <div ref={paymentBrickRef} id="paymentBrick_container" className="mb-6" />
-
-        {/* CTA */}
-        <Button
-          onClick={handleStartTrial}
-          disabled={sub.subscriptionStatus === "trial" || sub.subscriptionStatus === "active"}
-          className="w-full h-14 rounded-2xl text-lg font-bold shadow-xl transition-all"
-          style={{
-            background: `linear-gradient(135deg, ${selected.accent}, ${selected.accent}cc)`,
-            color: "white",
-          }}
-        >
-          <Sparkles className="mr-2 h-5 w-5" />
-          {sub.subscriptionStatus === "trial"
-            ? "Teste já ativado"
-            : `Começar ${selected.name} — 7 Dias Grátis`}
-        </Button>
-
-        {sub.subscriptionStatus === "trial" && (
-          <p className="mt-3 text-center text-sm text-primary">✨ Seu teste está ativo!</p>
         )}
 
+        {/* Payment CTA */}
+        <div className="space-y-3">
+          {/* Pay now button */}
+          <Button
+            onClick={handlePayment}
+            disabled={creatingPreference || !publicKey}
+            className="w-full h-14 rounded-2xl text-lg font-bold shadow-xl transition-all"
+            style={{
+              background: `linear-gradient(135deg, ${selected.accent}, ${selected.accent}cc)`,
+              color: "white",
+            }}
+          >
+            {creatingPreference ? (
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            ) : (
+              <CreditCard className="mr-2 h-5 w-5" />
+            )}
+            {creatingPreference
+              ? "Preparando pagamento..."
+              : `Assinar ${selected.name} — R$ ${selected.price}/mês`}
+          </Button>
+
+          {/* Trial button */}
+          {canTrial && (
+            <Button
+              onClick={handleStartTrial}
+              variant="outline"
+              className="w-full h-12 rounded-2xl text-base font-semibold"
+            >
+              <Sparkles className="mr-2 h-5 w-5" />
+              Começar teste grátis de 7 dias
+            </Button>
+          )}
+
+          {sub.subscriptionStatus === "trial" && (
+            <p className="text-center text-sm text-primary">✨ Seu teste está ativo!</p>
+          )}
+        </div>
+
         <p className="mt-6 text-center text-xs text-muted-foreground/60">
-          Ao ativar, você concorda com os Termos de Uso e Política de Privacidade.
+          Ao assinar, você concorda com os Termos de Uso e Política de Privacidade.
         </p>
       </div>
     </div>
@@ -271,11 +318,7 @@ export default function CheckoutPage() {
 function CellIcon({ value }: { value: boolean }) {
   return (
     <div className="p-3 flex justify-center">
-      {value ? (
-        <Check className="h-4 w-4 text-[hsl(152,60%,50%)]" />
-      ) : (
-        <X className="h-4 w-4 text-muted-foreground/30" />
-      )}
+      {value ? <Check className="h-4 w-4 text-[hsl(152,60%,50%)]" /> : <X className="h-4 w-4 text-muted-foreground/30" />}
     </div>
   );
 }
