@@ -1,7 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles, Loader2, CreditCard } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Check, X, Crown, Gem, Shield, ArrowLeft, Sparkles, Loader2,
+  CreditCard, QrCode, FileText, Copy, ExternalLink,
+} from "lucide-react";
 import { startTrial, trackEvent, getSubscription } from "@/lib/analytics";
 import { db } from "@/lib/storage";
 import { useToast } from "@/hooks/use-toast";
@@ -42,52 +49,46 @@ const features: Feature[] = [
 
 const plans = [
   {
-    id: "pro" as const,
-    name: "PRO",
-    price: 99,
-    icon: Crown,
-    badge: "Mais escolhido",
-    accent: "hsl(43,72%,50%)",
+    id: "pro" as const, name: "PRO", price: 99, icon: Crown,
+    badge: "Mais escolhido", accent: "hsl(43,72%,50%)",
     description: "Para empresas que querem crescer com controle total.",
   },
   {
-    id: "premium" as const,
-    name: "PREMIUM",
-    price: 199,
-    icon: Gem,
-    badge: null,
-    accent: "hsl(270,60%,55%)",
+    id: "premium" as const, name: "PREMIUM", price: 199, icon: Gem,
+    badge: null, accent: "hsl(270,60%,55%)",
     description: "Para operações avançadas com múltiplos técnicos.",
   },
 ];
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { user } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<"pro" | "premium">("pro");
   const sub = getSubscription();
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [loadingMp, setLoadingMp] = useState(true);
-  const [creatingPreference, setCreatingPreference] = useState(false);
+  const [mpInstance, setMpInstance] = useState<any>(null);
+  const [processing, setProcessing] = useState(false);
+  const [paymentResult, setPaymentResult] = useState<any>(null);
 
-  // Handle return from MP checkout
-  useEffect(() => {
-    const status = searchParams.get("status");
-    if (status === "approved") {
-      toast({ title: "🎉 Pagamento aprovado!", description: "Seu plano será ativado em instantes." });
-      navigate("/");
-    } else if (status === "failure") {
-      toast({ title: "Pagamento não aprovado", description: "Tente novamente ou use outro método.", variant: "destructive" });
-    } else if (status === "pending") {
-      toast({ title: "⏳ Pagamento pendente", description: "Aguardando confirmação do pagamento." });
-    }
-  }, [searchParams]);
+  // Card form state
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
+  const [cardHolder, setCardHolder] = useState("");
+  const [docType, setDocType] = useState("CPF");
+  const [docNumber, setDocNumber] = useState("");
+  const [installments, setInstallments] = useState(1);
 
-  // Fetch MP public key
+  // Pix/Boleto state
+  const [payerEmail, setPayerEmail] = useState(user?.email || "");
+  const [payerFirstName, setPayerFirstName] = useState("");
+  const [payerLastName, setPayerLastName] = useState("");
+
+  // Fetch public key
   useEffect(() => {
-    const fetchPublicKey = async () => {
+    const fetchPk = async () => {
       try {
         const { data } = await supabase
           .from("admin_settings")
@@ -101,54 +102,110 @@ export default function CheckoutPage() {
         setLoadingMp(false);
       }
     };
-    fetchPublicKey();
+    fetchPk();
   }, []);
 
-  // Initialize MP SDK
+  // Init MP SDK
   useEffect(() => {
     if (!publicKey || !window.MercadoPago) return;
     try {
-      new window.MercadoPago(publicKey, { locale: "pt-BR" });
+      const mp = new window.MercadoPago(publicKey, { locale: "pt-BR" });
+      setMpInstance(mp);
       console.log("MercadoPago SDK initialized");
     } catch (err) {
       console.error("Error initializing MercadoPago:", err);
     }
   }, [publicKey]);
 
-  const handlePayment = useCallback(async () => {
+  useEffect(() => {
+    if (user?.email) setPayerEmail(user.email);
+  }, [user]);
+
+  const processPayment = useCallback(async (paymentType: string, extraData: Record<string, any> = {}) => {
     if (!user) {
       toast({ title: "Faça login para continuar", variant: "destructive" });
       navigate("/login");
       return;
     }
-
-    setCreatingPreference(true);
+    setProcessing(true);
+    setPaymentResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("create-mp-preference", {
-        body: { plan: selectedPlan },
+      const { data, error } = await supabase.functions.invoke("process-payment", {
+        body: {
+          plan: selectedPlan,
+          payment_type: paymentType,
+          payer: {
+            email: payerEmail,
+            identification: { type: docType, number: docNumber },
+            first_name: payerFirstName,
+            last_name: payerLastName,
+          },
+          ...extraData,
+        },
       });
 
-      if (error || !data?.init_point) {
-        throw new Error(error?.message || "Erro ao criar preferência");
+      if (error) throw new Error(error.message || "Erro ao processar pagamento");
+      if (data?.error) throw new Error(data.error);
+
+      trackEvent("payment_processed", { plan: selectedPlan, type: paymentType, status: data.status });
+      setPaymentResult({ ...data, payment_type: paymentType });
+
+      if (data.status === "approved") {
+        toast({ title: "🎉 Pagamento aprovado!", description: "Seu plano será ativado em instantes." });
+        setTimeout(() => navigate("/"), 2000);
+      } else if (data.status === "pending" || data.status === "in_process") {
+        toast({ title: "⏳ Pagamento pendente", description: "Siga as instruções para concluir." });
+      } else {
+        toast({ title: "Pagamento não aprovado", description: data.status_detail || "Tente novamente.", variant: "destructive" });
       }
-
-      trackEvent("checkout_started", { plan: selectedPlan });
-
-      // Redirect to Mercado Pago checkout
-      // Use sandbox_init_point for test keys, init_point for production
-      const checkoutUrl = data.sandbox_init_point || data.init_point;
-      window.location.href = checkoutUrl;
     } catch (err: any) {
       console.error("Payment error:", err);
-      toast({
-        title: "Erro ao iniciar pagamento",
-        description: err.message || "Tente novamente.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro no pagamento", description: err.message, variant: "destructive" });
     } finally {
-      setCreatingPreference(false);
+      setProcessing(false);
     }
-  }, [selectedPlan, user]);
+  }, [selectedPlan, user, payerEmail, docType, docNumber, payerFirstName, payerLastName]);
+
+  const handleCardPayment = useCallback(async () => {
+    if (!mpInstance) {
+      toast({ title: "SDK não carregado", variant: "destructive" });
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      // Parse expiry
+      const [expMonth, expYear] = cardExpiry.split("/").map(s => s.trim());
+
+      // Create card token via MP SDK
+      const tokenResponse = await mpInstance.createCardToken({
+        cardNumber: cardNumber.replace(/\s/g, ""),
+        cardholderName: cardHolder,
+        cardExpirationMonth: expMonth,
+        cardExpirationYear: expYear?.length === 2 ? `20${expYear}` : expYear,
+        securityCode: cardCvc,
+        identificationType: docType,
+        identificationNumber: docNumber,
+      });
+
+      if (tokenResponse.error) {
+        throw new Error("Erro ao tokenizar cartão. Verifique os dados.");
+      }
+
+      await processPayment("card", {
+        token: tokenResponse.id,
+        payment_method_id: tokenResponse.payment_method_id || "visa",
+        installments,
+      });
+    } catch (err: any) {
+      console.error("Card token error:", err);
+      toast({ title: "Erro no cartão", description: err.message || "Verifique os dados do cartão.", variant: "destructive" });
+      setProcessing(false);
+    }
+  }, [mpInstance, cardNumber, cardExpiry, cardCvc, cardHolder, docType, docNumber, installments, processPayment]);
+
+  const handlePixPayment = () => processPayment("pix");
+  const handleBoletoPayment = () => processPayment("boleto");
 
   const handleStartTrial = () => {
     startTrial();
@@ -163,6 +220,11 @@ export default function CheckoutPage() {
 
   const selected = plans.find((p) => p.id === selectedPlan)!;
   const canTrial = sub.subscriptionStatus !== "trial" && sub.subscriptionStatus !== "active";
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: "Copiado!" });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-muted/30 to-background text-foreground">
@@ -186,7 +248,7 @@ export default function CheckoutPage() {
             </span>
           </h1>
           <p className="mt-3 text-muted-foreground max-w-lg mx-auto">
-            Compare os recursos e comece com 7 dias grátis ou assine agora.
+            Compare os recursos e pague diretamente por aqui.
           </p>
         </div>
 
@@ -200,9 +262,7 @@ export default function CheckoutPage() {
                 key={plan.id}
                 onClick={() => setSelectedPlan(plan.id)}
                 className={`relative rounded-2xl border-2 p-6 text-left transition-all ${
-                  isSelected
-                    ? "border-primary bg-primary/5 shadow-lg"
-                    : "border-border bg-card hover:border-muted-foreground/30"
+                  isSelected ? "border-primary bg-primary/5 shadow-lg" : "border-border bg-card hover:border-muted-foreground/30"
                 }`}
               >
                 {plan.badge && (
@@ -235,7 +295,7 @@ export default function CheckoutPage() {
           })}
         </div>
 
-        {/* Feature comparison table */}
+        {/* Feature comparison */}
         <div className="rounded-2xl border border-border bg-card overflow-hidden mb-10">
           <div className="grid grid-cols-[1fr_80px_80px_80px] sm:grid-cols-[1fr_100px_100px_100px] text-center text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border bg-muted/50">
             <div className="p-3 text-left">Recurso</div>
@@ -256,61 +316,293 @@ export default function CheckoutPage() {
         {/* Guarantee */}
         <div className="mb-8 rounded-2xl border border-border bg-card p-5 text-center">
           <Shield className="mx-auto mb-2 h-6 w-6 text-[hsl(152,60%,50%)]" />
-          <p className="font-bold">Teste grátis de 7 dias</p>
+          <p className="font-bold">Garantia de 7 dias</p>
           <p className="mt-1 text-sm text-muted-foreground">Cancele quando quiser. Sem compromisso.</p>
         </div>
 
-        {/* MP Status */}
-        {loadingMp && (
-          <div className="flex items-center justify-center gap-2 mb-4 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Carregando gateway de pagamento...
+        {/* Payment Result */}
+        {paymentResult && (
+          <PaymentResultView result={paymentResult} onCopy={copyToClipboard} />
+        )}
+
+        {/* Payment Methods */}
+        {!paymentResult && (
+          <div className="rounded-2xl border border-border bg-card p-6 mb-6">
+            <h2 className="text-lg font-bold mb-4">
+              Pagamento — {selected.name} R$ {selected.price}/mês
+            </h2>
+
+            {loadingMp ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Carregando métodos de pagamento...
+              </div>
+            ) : (
+              <Tabs defaultValue="card">
+                <TabsList className="w-full mb-6">
+                  <TabsTrigger value="card" className="flex-1 gap-2">
+                    <CreditCard className="h-4 w-4" /> Cartão
+                  </TabsTrigger>
+                  <TabsTrigger value="pix" className="flex-1 gap-2">
+                    <QrCode className="h-4 w-4" /> Pix
+                  </TabsTrigger>
+                  <TabsTrigger value="boleto" className="flex-1 gap-2">
+                    <FileText className="h-4 w-4" /> Boleto
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* CARD TAB */}
+                <TabsContent value="card" className="space-y-4">
+                  <div>
+                    <Label>Número do cartão</Label>
+                    <Input
+                      placeholder="0000 0000 0000 0000"
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                      maxLength={19}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Validade</Label>
+                      <Input
+                        placeholder="MM/AA"
+                        value={cardExpiry}
+                        onChange={(e) => setCardExpiry(e.target.value)}
+                        maxLength={5}
+                      />
+                    </div>
+                    <div>
+                      <Label>CVV</Label>
+                      <Input
+                        placeholder="123"
+                        value={cardCvc}
+                        onChange={(e) => setCardCvc(e.target.value)}
+                        maxLength={4}
+                        type="password"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Nome no cartão</Label>
+                    <Input
+                      placeholder="NOME COMO ESTÁ NO CARTÃO"
+                      value={cardHolder}
+                      onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Tipo de documento</Label>
+                      <Select value={docType} onValueChange={setDocType}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CPF">CPF</SelectItem>
+                          <SelectItem value="CNPJ">CNPJ</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Nº do documento</Label>
+                      <Input
+                        placeholder="000.000.000-00"
+                        value={docNumber}
+                        onChange={(e) => setDocNumber(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Parcelas</Label>
+                    <Select value={String(installments)} onValueChange={(v) => setInstallments(Number(v))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {[1, 2, 3, 6, 12].map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            {n}x de R$ {(selected.price / n).toFixed(2)}
+                            {n === 1 ? " (à vista)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={handleCardPayment}
+                    disabled={processing || !cardNumber || !cardExpiry || !cardCvc || !cardHolder || !docNumber}
+                    className="w-full h-12 rounded-xl text-base font-bold"
+                    style={{ background: `linear-gradient(135deg, ${selected.accent}, ${selected.accent}cc)`, color: "white" }}
+                  >
+                    {processing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
+                    {processing ? "Processando..." : `Pagar R$ ${selected.price}`}
+                  </Button>
+                </TabsContent>
+
+                {/* PIX TAB */}
+                <TabsContent value="pix" className="space-y-4">
+                  <div>
+                    <Label>E-mail</Label>
+                    <Input value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} placeholder="seu@email.com" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Tipo de documento</Label>
+                      <Select value={docType} onValueChange={setDocType}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CPF">CPF</SelectItem>
+                          <SelectItem value="CNPJ">CNPJ</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Nº do documento</Label>
+                      <Input value={docNumber} onChange={(e) => setDocNumber(e.target.value)} placeholder="000.000.000-00" />
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handlePixPayment}
+                    disabled={processing || !payerEmail || !docNumber}
+                    className="w-full h-12 rounded-xl text-base font-bold bg-[hsl(152,60%,40%)] hover:bg-[hsl(152,60%,35%)] text-white"
+                  >
+                    {processing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <QrCode className="mr-2 h-5 w-5" />}
+                    {processing ? "Gerando Pix..." : `Gerar Pix — R$ ${selected.price}`}
+                  </Button>
+                </TabsContent>
+
+                {/* BOLETO TAB */}
+                <TabsContent value="boleto" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Nome</Label>
+                      <Input value={payerFirstName} onChange={(e) => setPayerFirstName(e.target.value)} placeholder="Nome" />
+                    </div>
+                    <div>
+                      <Label>Sobrenome</Label>
+                      <Input value={payerLastName} onChange={(e) => setPayerLastName(e.target.value)} placeholder="Sobrenome" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>E-mail</Label>
+                    <Input value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} placeholder="seu@email.com" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Tipo de documento</Label>
+                      <Select value={docType} onValueChange={setDocType}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CPF">CPF</SelectItem>
+                          <SelectItem value="CNPJ">CNPJ</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Nº do documento</Label>
+                      <Input value={docNumber} onChange={(e) => setDocNumber(e.target.value)} placeholder="000.000.000-00" />
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleBoletoPayment}
+                    disabled={processing || !payerEmail || !payerFirstName || !payerLastName || !docNumber}
+                    className="w-full h-12 rounded-xl text-base font-bold bg-muted-foreground hover:bg-muted-foreground/90 text-background"
+                  >
+                    {processing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FileText className="mr-2 h-5 w-5" />}
+                    {processing ? "Gerando boleto..." : `Gerar Boleto — R$ ${selected.price}`}
+                  </Button>
+                </TabsContent>
+              </Tabs>
+            )}
           </div>
         )}
 
-        {/* Payment CTA */}
-        <div className="space-y-3">
-          {/* Pay now button */}
-          <Button
-            onClick={handlePayment}
-            disabled={creatingPreference || !publicKey}
-            className="w-full h-14 rounded-2xl text-lg font-bold shadow-xl transition-all"
-            style={{
-              background: `linear-gradient(135deg, ${selected.accent}, ${selected.accent}cc)`,
-              color: "white",
-            }}
-          >
-            {creatingPreference ? (
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            ) : (
-              <CreditCard className="mr-2 h-5 w-5" />
-            )}
-            {creatingPreference
-              ? "Preparando pagamento..."
-              : `Assinar ${selected.name} — R$ ${selected.price}/mês`}
+        {/* Trial button */}
+        {canTrial && !paymentResult && (
+          <Button onClick={handleStartTrial} variant="outline" className="w-full h-12 rounded-2xl text-base font-semibold mt-4">
+            <Sparkles className="mr-2 h-5 w-5" />
+            Começar teste grátis de 7 dias
           </Button>
+        )}
 
-          {/* Trial button */}
-          {canTrial && (
-            <Button
-              onClick={handleStartTrial}
-              variant="outline"
-              className="w-full h-12 rounded-2xl text-base font-semibold"
-            >
-              <Sparkles className="mr-2 h-5 w-5" />
-              Começar teste grátis de 7 dias
-            </Button>
-          )}
-
-          {sub.subscriptionStatus === "trial" && (
-            <p className="text-center text-sm text-primary">✨ Seu teste está ativo!</p>
-          )}
-        </div>
+        {sub.subscriptionStatus === "trial" && (
+          <p className="mt-3 text-center text-sm text-primary">✨ Seu teste está ativo!</p>
+        )}
 
         <p className="mt-6 text-center text-xs text-muted-foreground/60">
           Ao assinar, você concorda com os Termos de Uso e Política de Privacidade.
         </p>
       </div>
+    </div>
+  );
+}
+
+function PaymentResultView({ result, onCopy }: { result: any; onCopy: (text: string) => void }) {
+  if (result.status === "approved") {
+    return (
+      <div className="rounded-2xl border-2 border-[hsl(152,60%,50%)] bg-[hsl(152,60%,50%)]/5 p-6 mb-6 text-center">
+        <Check className="mx-auto mb-3 h-12 w-12 text-[hsl(152,60%,50%)]" />
+        <h3 className="text-xl font-bold mb-1">Pagamento aprovado!</h3>
+        <p className="text-muted-foreground">Seu plano será ativado automaticamente.</p>
+      </div>
+    );
+  }
+
+  if (result.payment_type === "pix" && result.pix_qr_code) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6 mb-6">
+        <div className="text-center mb-4">
+          <QrCode className="mx-auto mb-2 h-8 w-8 text-[hsl(152,60%,50%)]" />
+          <h3 className="text-lg font-bold">Pague com Pix</h3>
+          <p className="text-sm text-muted-foreground">Escaneie o QR code ou copie o código</p>
+        </div>
+        {result.pix_qr_code_base64 && (
+          <div className="flex justify-center mb-4">
+            <img
+              src={`data:image/png;base64,${result.pix_qr_code_base64}`}
+              alt="QR Code Pix"
+              className="w-48 h-48 rounded-lg"
+            />
+          </div>
+        )}
+        <div className="relative">
+          <Input value={result.pix_qr_code} readOnly className="pr-12 text-xs font-mono" />
+          <button
+            onClick={() => onCopy(result.pix_qr_code)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-muted"
+          >
+            <Copy className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (result.payment_type === "boleto" && result.boleto_url) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6 mb-6 text-center">
+        <FileText className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+        <h3 className="text-lg font-bold mb-2">Boleto gerado!</h3>
+        <p className="text-sm text-muted-foreground mb-4">Pague até a data de vencimento para ativar seu plano.</p>
+        {result.barcode && (
+          <div className="relative mb-4">
+            <Input value={result.barcode} readOnly className="pr-12 text-xs font-mono" />
+            <button onClick={() => onCopy(result.barcode)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-muted">
+              <Copy className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        <Button onClick={() => window.open(result.boleto_url, "_blank")} variant="outline" className="gap-2">
+          <ExternalLink className="h-4 w-4" /> Abrir boleto
+        </Button>
+      </div>
+    );
+  }
+
+  // Generic pending/rejected
+  return (
+    <div className="rounded-2xl border border-border bg-card p-6 mb-6 text-center">
+      <h3 className="text-lg font-bold mb-1">
+        {result.status === "pending" || result.status === "in_process" ? "⏳ Pagamento pendente" : "Pagamento não aprovado"}
+      </h3>
+      <p className="text-sm text-muted-foreground">{result.status_detail}</p>
     </div>
   );
 }
