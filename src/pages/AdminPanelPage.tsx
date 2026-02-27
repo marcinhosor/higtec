@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import {
   Shield, Webhook, CreditCard, ExternalLink, CheckCircle, AlertCircle,
-  Users, Building2, Search, RefreshCw, Crown, Eye,
+  Users, Building2, Search, RefreshCw, Crown, Eye, Lock, KeyRound, Save,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,6 +51,16 @@ export default function AdminPanelPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Password gate states
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [verifyingPassword, setVerifyingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [settingPassword, setSettingPassword] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+
   // Data states
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -73,9 +83,55 @@ export default function AdminPanelPage() {
       });
   }, [user, navigate]);
 
+  // Check if admin password exists
   useEffect(() => {
-    if (isAdmin) loadAllData();
+    if (!isAdmin) return;
+    supabase.rpc("has_admin_password").then(({ data }) => {
+      setHasPassword(!!data);
+      if (!data) setIsUnlocked(true); // No password set yet, allow access to set one
+    });
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin && isUnlocked) loadAllData();
+  }, [isAdmin, isUnlocked]);
+
+  const handleVerifyPassword = async () => {
+    if (!passwordInput.trim()) return;
+    setVerifyingPassword(true);
+    const { data, error } = await supabase.rpc("verify_admin_password", { _password: passwordInput });
+    if (error || !data) {
+      toast.error("Senha incorreta");
+    } else {
+      setIsUnlocked(true);
+      toast.success("Acesso liberado");
+    }
+    setPasswordInput("");
+    setVerifyingPassword(false);
+  };
+
+  const handleSetPassword = async () => {
+    if (newPassword.length < 6) {
+      toast.error("A senha deve ter pelo menos 6 caracteres");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("As senhas não coincidem");
+      return;
+    }
+    setSettingPassword(true);
+    const { data, error } = await supabase.rpc("set_admin_password", { _password: newPassword });
+    if (error || !data) {
+      toast.error("Erro ao definir senha");
+    } else {
+      toast.success("Senha do painel admin definida com sucesso!");
+      setHasPassword(true);
+      setNewPassword("");
+      setConfirmPassword("");
+      setShowChangePassword(false);
+    }
+    setSettingPassword(false);
+  };
 
   const loadAllData = async () => {
     setLoadingData(true);
@@ -206,12 +262,58 @@ export default function AdminPanelPage() {
     );
   };
 
-  if (loading || !isAdmin) {
+  if (loading || !isAdmin || hasPassword === null) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
+  }
+
+  // Password gate - if password exists and not unlocked
+  if (hasPassword && !isUnlocked) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+              <Lock className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle>Painel Administrativo</CardTitle>
+            <CardDescription>Digite a senha de acesso para continuar</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              type="password"
+              placeholder="Senha do painel admin"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleVerifyPassword()}
+            />
+            <Button
+              className="w-full gap-2"
+              onClick={handleVerifyPassword}
+              disabled={verifyingPassword || !passwordInput.trim()}
+            >
+              {verifyingPassword ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <KeyRound className="h-4 w-4" />
+              )}
+              Desbloquear
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={() => navigate("/")}>
+              Voltar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // First-time setup - no password set yet
+  if (!hasPassword && isUnlocked) {
+    // Show setup inline - will render main panel with setup banner
   }
 
   return (
@@ -226,6 +328,84 @@ export default function AdminPanelPage() {
           </div>
           <Badge variant="outline" className="ml-auto">Admin</Badge>
         </div>
+
+        {/* Password Setup Banner */}
+        {!hasPassword && (
+          <Card className="border-primary/50 bg-primary/5">
+            <CardContent className="pt-4 pb-4 px-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-primary mt-0.5" />
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <p className="font-semibold text-foreground">Defina uma senha para o painel admin</p>
+                    <p className="text-sm text-muted-foreground">
+                      Proteja o acesso ao painel com uma senha exclusiva. Sem ela, qualquer admin poderá acessar.
+                    </p>
+                  </div>
+                  <div className="grid gap-2 max-w-sm">
+                    <Input
+                      type="password"
+                      placeholder="Nova senha (mín. 6 caracteres)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      placeholder="Confirmar senha"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                    <Button onClick={handleSetPassword} disabled={settingPassword} className="gap-2">
+                      {settingPassword ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Definir Senha
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Change Password Toggle */}
+        {hasPassword && (
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowChangePassword(!showChangePassword)}>
+              <KeyRound className="h-3 w-3" />
+              {showChangePassword ? "Cancelar" : "Alterar Senha Admin"}
+            </Button>
+          </div>
+        )}
+
+        {showChangePassword && hasPassword && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <KeyRound className="h-5 w-5" />
+                Alterar Senha do Painel
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2 max-w-sm">
+                <Input
+                  type="password"
+                  placeholder="Nova senha (mín. 6 caracteres)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+                <Input
+                  type="password"
+                  placeholder="Confirmar nova senha"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+                <Button onClick={handleSetPassword} disabled={settingPassword} className="gap-2">
+                  {settingPassword ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Salvar Nova Senha
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
