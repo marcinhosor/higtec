@@ -229,8 +229,8 @@ export default function Dashboard() {
               onClick={() => navigate(item.path)}
               className="flex flex-col items-center gap-2 rounded-xl bg-card p-5 shadow-card transition-all hover:shadow-card-hover active:scale-[0.97] animate-fade-in"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white shadow-sm">
-                <item.icon className="h-6 w-6 text-primary" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
+                <item.icon className="h-6 w-6 text-white" />
               </div>
               <span className="text-sm font-semibold text-foreground">{item.label}</span>
               <span className="text-xs text-muted-foreground text-center leading-tight">{item.desc}</span>
