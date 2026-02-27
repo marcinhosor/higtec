@@ -207,6 +207,7 @@ export type Database = {
         Args: { _company_id: string; _user_id: string }
         Returns: boolean
       }
+      is_master_admin: { Args: { _user_id: string }; Returns: boolean }
       set_admin_password: { Args: { _password: string }; Returns: boolean }
       verify_admin_password: { Args: { _password: string }; Returns: boolean }
     }
