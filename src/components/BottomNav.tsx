@@ -1,7 +1,8 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { Home, Users, Calendar, Receipt, Package, Settings } from "lucide-react";
+import { Home, Users, Calendar, Receipt, Package, Settings, Wrench } from "lucide-react";
+import { useTechnician } from "@/contexts/TechnicianContext";
 
-const navItems = [
+const adminNavItems = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/clientes", icon: Users, label: "Clientes" },
   { path: "/agenda", icon: Calendar, label: "Agenda" },
@@ -10,9 +11,18 @@ const navItems = [
   { path: "/configuracoes", icon: Settings, label: "Config" },
 ];
 
+const techNavItems = [
+  { path: "/orcamentos", icon: Receipt, label: "Orçam." },
+  { path: "/agenda", icon: Calendar, label: "Agenda" },
+  { path: "/execucao", icon: Wrench, label: "Execução" },
+];
+
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isTechnician } = useTechnician();
+
+  const navItems = isTechnician ? techNavItems : adminNavItems;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-area-bottom">

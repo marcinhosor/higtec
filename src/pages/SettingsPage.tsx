@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
+import { useAuth } from "@/contexts/AuthContext";
 import PageShell from "@/components/PageShell";
 import { db, CompanyInfo, PixKey, Collaborator, ServiceType, generateId, THEME_PALETTES } from "@/lib/storage";
+import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil } from "lucide-react";
+import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil, Key, Copy, Shield } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import ThemeSelector from "@/components/ThemeSelector";
@@ -27,6 +29,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { planTier: dbPlanTier, isPro: dbIsPro, isTrialActive, trialDaysRemaining } = useCompanyPlan();
   const { setTheme, refresh: refreshTheme } = useTheme();
+  const { user } = useAuth();
   const [company, setCompany] = useState<CompanyInfo>(() => {
     const c = db.getCompany();
     return {
@@ -46,6 +49,84 @@ export default function SettingsPage() {
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(() => db.getServiceTypes());
   const [editingST, setEditingST] = useState<ServiceType | null>(null);
   const [stForm, setStForm] = useState({ name: "", defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0 });
+
+  // Technician management state
+  const [technicians, setTechnicians] = useState<any[]>([]);
+  const [techOpen, setTechOpen] = useState(false);
+  const [editingTech, setEditingTech] = useState<any | null>(null);
+  const [techForm, setTechForm] = useState({ name: "", email: "", phone: "", pin: "" });
+  const [accessCode, setAccessCode] = useState("");
+  const [loadingTechs, setLoadingTechs] = useState(false);
+
+  // Load technicians and access code from database
+  useEffect(() => {
+    if (!user) return;
+    const loadTechnicians = async () => {
+      setLoadingTechs(true);
+      // Get company_id from profile
+      const { data: profile } = await supabase.from("profiles").select("company_id").eq("user_id", user.id).single();
+      if (!profile?.company_id) { setLoadingTechs(false); return; }
+
+      // Get access code
+      const { data: companyData } = await supabase.from("companies").select("access_code").eq("id", profile.company_id).single();
+      if (companyData) setAccessCode(companyData.access_code);
+
+      // Get technicians
+      const { data: techs } = await supabase.from("technicians").select("*").eq("company_id", profile.company_id).order("created_at");
+      if (techs) setTechnicians(techs);
+      setLoadingTechs(false);
+    };
+    loadTechnicians();
+  }, [user]);
+
+  const saveTechnician = async () => {
+    if (!techForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    if (techForm.pin.length !== 4) { toast.error("PIN deve ter 4 dígitos"); return; }
+    
+    const { data: profile } = await supabase.from("profiles").select("company_id").eq("user_id", user!.id).single();
+    if (!profile?.company_id) { toast.error("Empresa não encontrada"); return; }
+
+    if (editingTech) {
+      const { error } = await supabase.from("technicians").update({
+        name: techForm.name, email: techForm.email || null, phone: techForm.phone || null, pin: techForm.pin,
+      }).eq("id", editingTech.id);
+      if (error) { toast.error("Erro ao atualizar técnico"); return; }
+      setTechnicians(prev => prev.map(t => t.id === editingTech.id ? { ...t, ...techForm } : t));
+      toast.success("Técnico atualizado!");
+    } else {
+      const { data, error } = await supabase.from("technicians").insert({
+        company_id: profile.company_id, name: techForm.name, email: techForm.email || null, phone: techForm.phone || null, pin: techForm.pin,
+      }).select().single();
+      if (error) {
+        toast.error(error.message.includes("unique") ? "Já existe um técnico com esse nome" : "Erro ao cadastrar técnico");
+        return;
+      }
+      setTechnicians(prev => [...prev, data]);
+      toast.success("Técnico cadastrado!");
+    }
+    setTechOpen(false);
+    setEditingTech(null);
+    setTechForm({ name: "", email: "", phone: "", pin: "" });
+  };
+
+  const toggleTechStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === "active" ? "inactive" : "active";
+    const { error } = await supabase.from("technicians").update({ status: newStatus }).eq("id", id);
+    if (error) { toast.error("Erro ao alterar status"); return; }
+    setTechnicians(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+  };
+
+  const removeTechnician = async (id: string) => {
+    const { error } = await supabase.from("technicians").delete().eq("id", id);
+    if (error) { toast.error("Erro ao remover técnico"); return; }
+    setTechnicians(prev => prev.filter(t => t.id !== id));
+    toast.success("Técnico removido");
+  };
+
+  const copyAccessCode = () => {
+    navigator.clipboard.writeText(accessCode);
+    toast.success("Código copiado!");
+  };
 
   const saveCompany = () => {
     db.saveCompany(company);
@@ -543,6 +624,96 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        {/* Technician Management */}
+        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <Shield className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-foreground">Técnicos</h2>
+                <p className="text-xs text-muted-foreground">Acesso restrito ao app</p>
+              </div>
+            </div>
+            <Dialog open={techOpen} onOpenChange={o => { setTechOpen(o); if (!o) { setEditingTech(null); setTechForm({ name: "", email: "", phone: "", pin: "" }); } }}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md mx-4">
+                <DialogHeader><DialogTitle>{editingTech ? "Editar Técnico" : "Novo Técnico"}</DialogTitle></DialogHeader>
+                <div className="space-y-3">
+                  <div><Label>Nome Completo *</Label><Input value={techForm.name} onChange={e => setTechForm({...techForm, name: e.target.value})} placeholder="Nome do técnico" /></div>
+                  <div><Label>E-mail (opcional)</Label><Input type="email" value={techForm.email} onChange={e => setTechForm({...techForm, email: e.target.value})} placeholder="email@exemplo.com" /></div>
+                  <div><Label>Telefone (opcional)</Label><Input value={techForm.phone} onChange={e => setTechForm({...techForm, phone: e.target.value})} placeholder="(00) 00000-0000" /></div>
+                  <div>
+                    <Label>PIN de Acesso (4 dígitos) *</Label>
+                    <Input
+                      type="text"
+                      value={techForm.pin}
+                      onChange={e => setTechForm({...techForm, pin: e.target.value.replace(/\D/g, "").slice(0, 4)})}
+                      placeholder="0000"
+                      maxLength={4}
+                      inputMode="numeric"
+                      className="text-center text-lg tracking-widest font-mono"
+                    />
+                  </div>
+                  <Button onClick={saveTechnician} className="w-full rounded-full">{editingTech ? "Atualizar" : "Cadastrar"}</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {/* Access Code */}
+          {accessCode && (
+            <div className="rounded-lg bg-accent/50 p-3 mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Código de Acesso da Empresa</p>
+                <p className="text-lg font-bold font-mono tracking-widest text-primary">{accessCode}</p>
+                <p className="text-xs text-muted-foreground">Compartilhe com seus técnicos para login</p>
+              </div>
+              <Button variant="outline" size="icon" className="h-9 w-9" onClick={copyAccessCode}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {loadingTechs ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Carregando...</p>
+          ) : technicians.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Nenhum técnico cadastrado. Cadastre técnicos para que acessem o app com funcionalidades restritas.</p>
+          ) : (
+            <div className="space-y-2">
+              {technicians.map(t => (
+                <div key={t.id} className={`rounded-lg border p-3 flex items-center justify-between ${t.status === 'inactive' ? 'opacity-50' : ''}`}>
+                  <div>
+                    <p className="font-medium text-foreground text-sm">{t.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t.email && `${t.email} • `}{t.phone && `${t.phone} • `}
+                      {t.status === 'active' ? '✅ Ativo' : '⛔ Inativo'}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
+                      setTechForm({ name: t.name, email: t.email || "", phone: t.phone || "", pin: t.pin });
+                      setEditingTech(t);
+                      setTechOpen(true);
+                    }}>
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleTechStatus(t.id, t.status)}>
+                      {t.status === 'active' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeTechnician(t.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Backup */}
         <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">

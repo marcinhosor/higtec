@@ -40,6 +40,7 @@ export type Database = {
       }
       companies: {
         Row: {
+          access_code: string
           address: string | null
           city: string | null
           cnpj: string | null
@@ -59,6 +60,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          access_code?: string
           address?: string | null
           city?: string | null
           cnpj?: string | null
@@ -78,6 +80,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          access_code?: string
           address?: string | null
           city?: string | null
           cnpj?: string | null
@@ -171,6 +174,50 @@ export type Database = {
           },
         ]
       }
+      technicians: {
+        Row: {
+          company_id: string
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          pin: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          pin: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          pin?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "technicians_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -194,6 +241,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_access_code: { Args: never; Returns: string }
+      get_technicians_by_code: {
+        Args: { _code: string }
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
       get_user_company_id: { Args: { _user_id: string }; Returns: string }
       has_admin_password: { Args: never; Returns: boolean }
       has_role: {
@@ -209,6 +264,10 @@ export type Database = {
       }
       is_master_admin: { Args: { _user_id: string }; Returns: boolean }
       set_admin_password: { Args: { _password: string }; Returns: boolean }
+      technician_login: {
+        Args: { _code: string; _pin: string; _technician_id: string }
+        Returns: Json
+      }
       verify_admin_password: { Args: { _password: string }; Returns: boolean }
     }
     Enums: {

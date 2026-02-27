@@ -1,8 +1,10 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { useTechnician } from "@/contexts/TechnicianContext";
 import { Navigate } from "react-router-dom";
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
+  const { isTechnician } = useTechnician();
 
   if (loading) {
     return (
@@ -12,7 +14,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  if (!session) {
+  // Allow if either admin session or technician session exists
+  if (!session && !isTechnician) {
     return <Navigate to="/login" replace />;
   }
 
