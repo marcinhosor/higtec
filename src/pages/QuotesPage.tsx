@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { generateQuotePDF, generateProposalPDF } from "@/lib/pdf-quote";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 
 const paymentLabels: Record<string, string> = {
   pix: "Pix",
@@ -27,6 +28,7 @@ export default function QuotesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [clients, setClients] = useState<Client[]>(() => db.getClients());
   const [serviceTypes] = useState(() => db.getServiceTypes().filter(st => st.isActive).sort((a, b) => a.order - b.order));
+  const { isPro } = useCompanyPlan();
   const [company] = useState(() => db.getCompany());
   const [collaborators] = useState<Collaborator[]>(() => db.getCollaborators().filter(c => c.status === 'ativo'));
   const [appointments, setAppointments] = useState<Appointment[]>(() => db.getAppointments());
@@ -256,13 +258,13 @@ export default function QuotesPage() {
   const scheduleBusyTimes = scheduleForm.date ? getBusyTimes(scheduleForm.date) : [];
 
   const downloadPDF = (q: Quote) => {
-    const company = db.getCompany();
-    generateQuotePDF(q, company);
+    const c = { ...db.getCompany(), isPro };
+    generateQuotePDF(q, c);
   };
 
   const downloadProposal = (q: Quote) => {
-    const company = db.getCompany();
-    generateProposalPDF(q, company);
+    const c = { ...db.getCompany(), isPro };
+    generateProposalPDF(q, c);
   };
 
   const shareWhatsApp = (q: Quote) => {

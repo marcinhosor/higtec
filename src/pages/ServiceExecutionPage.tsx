@@ -56,7 +56,7 @@ export default function ServiceExecutionPage() {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [selectedTechnician, setSelectedTechnician] = useState("");
   const { isPro } = useCompanyPlan();
-  const company = useMemo(() => db.getCompany(), []);
+  const company = useMemo(() => ({ ...db.getCompany(), isPro }), [isPro]);
 
   const appointment = useMemo(() => {
     return db.getAppointments().find(a => a.id === appointmentId);
