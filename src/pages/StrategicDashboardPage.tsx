@@ -17,7 +17,7 @@ function formatCurrency(v: number) {
 
 export default function StrategicDashboardPage() {
   const { planTier } = useCompanyPlan();
-  const isPremium = planTier === "premium";
+  const isPremium = planTier === "premium" || planTier === "pro";
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear().toString());
 
