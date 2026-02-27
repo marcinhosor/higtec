@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 import PageShell from "@/components/PageShell";
 import { db, CompanyInfo, PixKey, Collaborator, ServiceType, generateId, THEME_PALETTES } from "@/lib/storage";
 import { Input } from "@/components/ui/input";
@@ -22,6 +24,8 @@ const pixTypeLabels: Record<PixKey['type'], string> = {
 };
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
+  const { planTier: dbPlanTier, isPro: dbIsPro, isTrialActive, trialDaysRemaining } = useCompanyPlan();
   const { setTheme, refresh: refreshTheme } = useTheme();
   const [company, setCompany] = useState<CompanyInfo>(() => {
     const c = db.getCompany();
@@ -54,10 +58,8 @@ export default function SettingsPage() {
     setTheme(themeId);
   };
 
-  const handlePlanChange = (tier: CompanyInfo['planTier']) => {
-    const isPro = tier === 'pro' || tier === 'premium';
-    setCompany(prev => ({ ...prev, planTier: tier, isPro }));
-  };
+
+
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -234,22 +236,31 @@ export default function SettingsPage() {
             </div>
             <div>
               <h2 className="font-semibold text-foreground">Plano da Conta</h2>
-              <p className="text-xs text-muted-foreground">Selecione o nível de acesso</p>
+              <p className="text-xs text-muted-foreground">Gerencie sua assinatura</p>
             </div>
           </div>
-          <Select value={company.planTier} onValueChange={(v) => handlePlanChange(v as CompanyInfo['planTier'])}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="free">🆓 FREE – Básico</SelectItem>
-              <SelectItem value="pro">⭐ PRO – R$ 99/mês</SelectItem>
-              <SelectItem value="premium">👑 PREMIUM – R$ 199/mês</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-bold">
+              {dbPlanTier === 'free' && '🆓 FREE'}
+              {dbPlanTier === 'pro' && '⭐ PRO'}
+              {dbPlanTier === 'premium' && '👑 PREMIUM'}
+            </span>
+            {isTrialActive && (
+              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                Trial — {trialDaysRemaining} dias restantes
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground mt-2">
-            {company.planTier === 'free' && 'Funcionalidades básicas. Sem personalização visual ou relatórios avançados.'}
-            {company.planTier === 'pro' && 'Personalização visual, relatórios avançados, estoque integrado e PDF profissional.'}
-            {company.planTier === 'premium' && 'Tudo do PRO + Dashboard estratégico, manutenção de equipamentos, gráficos e ranking.'}
+            {dbPlanTier === 'free' && 'Funcionalidades básicas. Sem personalização visual ou relatórios avançados.'}
+            {dbPlanTier === 'pro' && 'Personalização visual, relatórios avançados, estoque integrado e PDF profissional.'}
+            {dbPlanTier === 'premium' && 'Tudo do PRO + Dashboard estratégico, manutenção de equipamentos, gráficos e ranking.'}
           </p>
+          {dbPlanTier === 'free' && !isTrialActive && (
+            <Button onClick={() => navigate('/checkout')} className="mt-3 w-full" size="sm">
+              <Crown className="mr-2 h-4 w-4" /> Fazer upgrade
+            </Button>
+          )}
         </div>
 
         {/* Theme Selector */}
@@ -257,7 +268,7 @@ export default function SettingsPage() {
           <ThemeSelector
             selectedId={company.selectedThemeId}
             onSelect={handleThemeSelect}
-            canChange={company.isPro}
+            canChange={dbIsPro}
           />
         </div>
 
