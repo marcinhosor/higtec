@@ -273,6 +273,22 @@ export default function AdminPanelPage() {
     setSavingCredentials(false);
   };
 
+  const handleChangePlan = async (companyId: string, newTier: 'free' | 'pro' | 'premium') => {
+    const { error } = await supabase
+      .from("companies")
+      .update({ plan_tier: newTier })
+      .eq("id", companyId);
+    if (error) {
+      toast.error("Erro ao alterar plano");
+    } else {
+      toast.success(`Plano alterado para ${newTier.toUpperCase()}`);
+      setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, plan_tier: newTier } : c));
+      if (selectedCompany?.id === companyId) {
+        setSelectedCompany(prev => prev ? { ...prev, plan_tier: newTier } : prev);
+      }
+    }
+  };
+
   const filteredCompanies = companies.filter((c) => {
     const q = searchCompany.toLowerCase();
     return (
@@ -624,13 +640,24 @@ export default function AdminPanelPage() {
                             {formatDate(c.created_at)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setSelectedCompany(selectedCompany?.id === c.id ? null : c)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-1">
+                              <select
+                                value={c.plan_tier}
+                                onChange={(e) => handleChangePlan(c.id, e.target.value as 'free' | 'pro' | 'premium')}
+                                className="text-xs border rounded px-2 py-1 bg-background text-foreground"
+                              >
+                                <option value="free">FREE</option>
+                                <option value="pro">PRO</option>
+                                <option value="premium">PREMIUM</option>
+                              </select>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedCompany(selectedCompany?.id === c.id ? null : c)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
