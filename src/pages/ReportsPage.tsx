@@ -238,19 +238,35 @@ export default function ReportsPage() {
 
   const getDefaultProcedure = (serviceType: string) => {
     const servico = serviceType || '{serviço}';
-    return `Fazemos a avaliação do seu ${servico}, identificando o nível e o tipo de sujidade presente.
+    return `PROCESSO EXCLUSIVO
 
-Aplicamos os produtos adequados de acordo com a fibra do tecido e o tipo de material, respeitando as características específicas da superfície.
+Mais do que limpeza, uma experiencia de cuidado.
 
-Deixamos os produtos agir pelo tempo necessário para melhor desempenho na remoção das sujidades.
+Cada ${servico} e tratado como uma peca de valor.
+Nosso protocolo foi desenvolvido para atender clientes que exigem excelencia, discricao e resultados impecaveis.
 
-Realizamos escovação técnica para desprendimento da sujeira impregnada.
+1. Diagnostico Tecnico Personalizado
+Realizamos uma analise minuciosa da peca, identificando o nivel de sujidade, tipos de manchas e caracteristicas especificas da fibra.
+Cada tecido possui uma estrutura unica - e nosso cuidado comeca pelo respeito absoluto a essa individualidade.
 
-Em seguida, efetuamos o enxágue por extração com máquinas de alta potência.
+2. Tratamento Especializado de Alta Performance
+Selecionamos produtos profissionais de tecnologia avancada, adequados a composicao do material e ao grau de sujidade encontrado.
+As solucoes sao aplicadas de forma tecnica e precisa, preservando textura, cor e maciez.
 
-Após a finalização, aplicamos um perfume premium.
+3. Tempo de Acao Controlado
+Respeitamos o tempo tecnico ideal de cada ativo, permitindo que a formulacao atue profundamente na quebra das particulas impregnadas, preparando a superficie para uma remocao eficaz e segura.
 
-Seu ${servico} leva de 4 a 8 horas para estar completamente seco e pronto para uso.`;
+4. Escovacao Tecnica Controlada
+Executamos escovacao especializada, cuidadosamente calibrada para desprender a sujeira sem agredir as fibras, mantendo o acabamento original do estofado.
+
+5. Enxague por Extracao Profunda
+Utilizamos equipamentos profissionais de alta potencia para realizar a extracao completa dos residuos e da umidade, proporcionando limpeza uniforme, revitalizacao das fibras e toque renovado.
+
+6. Finalizacao Sensorial Premium
+Concluimos o processo com aplicacao de fragrancia sofisticada e exclusiva, deixando uma assinatura olfativa elegante no ambiente.
+
+Tempo de Secagem
+O ${servico} estara completamente seco e pronto para uso em aproximadamente 4 a 8 horas, podendo variar conforme ventilacao, temperatura e tipo de tecido.`;
   };
 
   // Neighborhood revenue data
