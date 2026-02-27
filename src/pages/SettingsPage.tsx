@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { useAuth } from "@/contexts/AuthContext";
 import PageShell from "@/components/PageShell";
-import { db, CompanyInfo, PixKey, Collaborator, ServiceType, generateId, THEME_PALETTES } from "@/lib/storage";
+import { db, CompanyInfo, PixKey, Collaborator, ServiceType, generateId, THEME_PALETTES, DEFAULT_CUSTOM_THEME } from "@/lib/storage";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ const pixTypeLabels: Record<PixKey['type'], string> = {
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { planTier: dbPlanTier, isPro: dbIsPro, isTrialActive, trialDaysRemaining } = useCompanyPlan();
-  const { setTheme, refresh: refreshTheme } = useTheme();
+  const { setTheme, setCustomTheme, refresh: refreshTheme } = useTheme();
   const { user } = useAuth();
   const [company, setCompany] = useState<CompanyInfo>(() => {
     const c = db.getCompany();
@@ -361,6 +361,13 @@ export default function SettingsPage() {
             selectedId={company.selectedThemeId}
             onSelect={handleThemeSelect}
             canChange={dbIsPro}
+            isPremium={dbPlanTier === 'premium'}
+            customTheme={company.customTheme || DEFAULT_CUSTOM_THEME}
+            onCustomTheme={(ct) => {
+              setCustomTheme(ct);
+              setCompany(prev => ({ ...prev, selectedThemeId: 'custom', customTheme: ct }));
+              toast.success("Personalização aplicada!");
+            }}
           />
         </div>
 

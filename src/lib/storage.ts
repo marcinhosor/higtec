@@ -231,16 +231,40 @@ export type ThemePalette = {
   secondary: string;
   accent: string;
   background: string;
+  cta?: string;
+  gray?: string;
+};
+
+export type CustomTheme = {
+  enabled: boolean;
+  primary: string;
+  secondary: string;
+  accent: string;
+  background: string;
+  cta: string;
+  textColor: string;
+  cardColor: string;
+};
+
+export const DEFAULT_CUSTOM_THEME: CustomTheme = {
+  enabled: false,
+  primary: '#2980CD',
+  secondary: '#D6E9F8',
+  accent: '#1a5276',
+  background: '#f0f7ff',
+  cta: '#2980CD',
+  textColor: '#1a2332',
+  cardColor: '#FFFFFF',
 };
 
 export const THEME_PALETTES: ThemePalette[] = [
   { id: 'default', name: 'Azul Padrão', primary: '#2980CD', secondary: '#D6E9F8', accent: '#1a5276', background: '#f0f7ff' },
-  { id: 'black-gold', name: 'Preto Ônix & Dourado Imperial', primary: '#C6A756', secondary: '#2A2A2A', accent: '#D4AF37', background: '#121212' },
-  { id: 'corporate-blue', name: 'Azul Profundo & Prata Elegante', primary: '#0F1C2E', secondary: '#9EA7B3', accent: '#1F3A5F', background: '#F4F6F8' },
-  { id: 'green-pro', name: 'Verde Esmeralda & Champagne', primary: '#0E3B2E', secondary: '#D6C6A8', accent: '#1F5C49', background: '#F7F5F0' },
-  { id: 'minimal-gray', name: 'Cinza Grafite & Azul Safira', primary: '#1E1E1E', secondary: '#1C3F60', accent: '#2E5E8C', background: '#F2F2F2' },
-  { id: 'white-gold', name: 'Branco Premium & Dourado Suave', primary: '#111111', secondary: '#C8A951', accent: '#B8923F', background: '#F8F8F8' },
-  { id: 'petrol-copper', name: 'Azul Petróleo & Cobre Sofisticado', primary: '#0F3057', secondary: '#B87333', accent: '#163E6C', background: '#F4F7FA' },
+  { id: 'signature', name: '💎 Signature Luxo Premium', primary: '#0D0D0D', secondary: '#C6A756', accent: '#D4AF37', background: '#F5F5F5', cta: '#D4AF37', gray: '#2A2A2A' },
+  { id: 'royal-blue', name: '🔷 Royal Blue Elite', primary: '#142B4D', secondary: '#3E6EA1', accent: '#1F4E8C', background: '#F4F8FC', cta: '#1F4E8C', gray: '#D9E2EC' },
+  { id: 'aqua-clean', name: '🌊 Aqua Clean Pro', primary: '#1C7C9C', secondary: '#9ED8E6', accent: '#146C88', background: '#F2FBFD', cta: '#146C88', gray: '#D7E9EF' },
+  { id: 'platinum', name: '🟣 Platinum Modern', primary: '#2B2B2B', secondary: '#BFC4C9', accent: '#4A4F55', background: '#F7F7F7', cta: '#4A4F55', gray: '#E5E7EA' },
+  { id: 'emerald', name: '🟢 Emerald Executive', primary: '#0F3D2E', secondary: '#2F7A5C', accent: '#1E5E47', background: '#F4FBF7', cta: '#1E5E47', gray: '#DCE8E2' },
+  { id: 'titanium-dark', name: '🔥 Titanium Dark', primary: '#1A1F24', secondary: '#3A3F45', accent: '#5C6B7A', background: '#111418', cta: '#5C6B7A', gray: '#2A2F35' },
 ];
 
 export type PlanTier = 'free' | 'pro' | 'premium';
@@ -256,6 +280,7 @@ export type CompanyInfo = {
   isPro: boolean;
   planTier: PlanTier;
   selectedThemeId: string;
+  customTheme?: CustomTheme;
   companyDescription: string;
   differentials: string;
   serviceGuarantee: string;
