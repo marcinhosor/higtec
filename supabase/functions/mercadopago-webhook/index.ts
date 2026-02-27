@@ -55,17 +55,27 @@ serve(async (req) => {
       });
     }
 
-    const mpResponse = await fetch(
-      `https://api.mercadopago.com/v1/payments/${paymentId}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    let mpResponse;
+    try {
+      mpResponse = await fetch(
+        `https://api.mercadopago.com/v1/payments/${paymentId}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+    } catch (fetchErr) {
+      console.error("Network error fetching payment:", fetchErr);
+      return new Response(
+        JSON.stringify({ received: true, error: "Network error fetching payment" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!mpResponse.ok) {
       const errText = await mpResponse.text();
-      console.error(`Mercado Pago API error [${mpResponse.status}]: ${errText}`);
+      console.warn(`Mercado Pago API error [${mpResponse.status}]: ${errText}`);
+      // Return 200 so MP doesn't retry — the payment may be a test or already expired
       return new Response(
-        JSON.stringify({ error: "Failed to fetch payment details" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ received: true, warning: "Could not fetch payment details", mp_status: mpResponse.status }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
