@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { TechnicianProvider } from "@/contexts/TechnicianContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -34,31 +35,33 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <AuthProvider>
-            <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/cadastro" element={<SignupPage />} />
-              <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <TechnicianProvider>
+            <AuthProvider>
+              <Routes>
+                {/* Public routes */}
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/cadastro" element={<SignupPage />} />
+                <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-              {/* Protected routes */}
-              <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-              <Route path="/clientes" element={<ProtectedRoute><ClientsPage /></ProtectedRoute>} />
-              <Route path="/agenda" element={<ProtectedRoute><AgendaPage /></ProtectedRoute>} />
-              <Route path="/orcamentos" element={<ProtectedRoute><QuotesPage /></ProtectedRoute>} />
-              <Route path="/calculadora" element={<ProtectedRoute><CalculatorPage /></ProtectedRoute>} />
-              <Route path="/produtos" element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
-              <Route path="/relatorios" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
-              <Route path="/configuracoes" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-              <Route path="/execucao" element={<ProtectedRoute><ServiceExecutionPage /></ProtectedRoute>} />
-              <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
-              <Route path="/painel" element={<ProtectedRoute><StrategicDashboardPage /></ProtectedRoute>} />
-              <Route path="/x9k2m" element={<ProtectedRoute><AdminPanelPage /></ProtectedRoute>} />
-              <Route path="/equipamentos" element={<ProtectedRoute><EquipmentPage /></ProtectedRoute>} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </AuthProvider>
+                {/* Protected routes */}
+                <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                <Route path="/clientes" element={<ProtectedRoute><ClientsPage /></ProtectedRoute>} />
+                <Route path="/agenda" element={<ProtectedRoute><AgendaPage /></ProtectedRoute>} />
+                <Route path="/orcamentos" element={<ProtectedRoute><QuotesPage /></ProtectedRoute>} />
+                <Route path="/calculadora" element={<ProtectedRoute><CalculatorPage /></ProtectedRoute>} />
+                <Route path="/produtos" element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
+                <Route path="/relatorios" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
+                <Route path="/configuracoes" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+                <Route path="/execucao" element={<ProtectedRoute><ServiceExecutionPage /></ProtectedRoute>} />
+                <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
+                <Route path="/painel" element={<ProtectedRoute><StrategicDashboardPage /></ProtectedRoute>} />
+                <Route path="/x9k2m" element={<ProtectedRoute><AdminPanelPage /></ProtectedRoute>} />
+                <Route path="/equipamentos" element={<ProtectedRoute><EquipmentPage /></ProtectedRoute>} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </AuthProvider>
+          </TechnicianProvider>
         </BrowserRouter>
       </ErrorBoundary>
     </TooltipProvider>
