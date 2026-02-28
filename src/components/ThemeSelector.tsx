@@ -55,6 +55,9 @@ function isDark(hex: string): boolean {
 export default function ThemeSelector({ selectedId, onSelect, canChange, isPro, isPremium, customTheme, onCustomTheme }: Props) {
   const [showCustom, setShowCustom] = useState(false);
   const [custom, setCustom] = useState<CustomTheme>(customTheme || DEFAULT_CUSTOM_THEME);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const currentSelected = pendingId ?? selectedId;
 
   const updateCustom = (key: keyof CustomTheme, value: string) => {
     setCustom(prev => ({ ...prev, [key]: value }));
@@ -87,14 +90,14 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPro, 
       {/* Palette grid */}
       <div className="grid grid-cols-1 gap-2">
         {THEME_PALETTES.map((p) => {
-          const isSelected = selectedId === p.id && !showCustom;
+          const isSelected = currentSelected === p.id && !showCustom;
           const isDefault = p.id === 'default';
           const locked = !canChange && !isDefault;
 
           return (
             <button
               key={p.id}
-              onClick={() => { if (!locked) { onSelect(p.id); setShowCustom(false); } }}
+              onClick={() => { if (!locked) { setPendingId(p.id); setShowCustom(false); } }}
               disabled={locked}
               className={`relative flex items-center gap-3 rounded-xl border-2 p-3 transition-all text-left ${
                 isSelected
@@ -125,13 +128,27 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPro, 
         })}
       </div>
 
+      {/* Confirm palette button */}
+      {pendingId && pendingId !== selectedId && !showCustom && (
+        <Button
+          onClick={() => {
+            onSelect(pendingId);
+            setPendingId(null);
+          }}
+          className="w-full rounded-full gap-2"
+          size="sm"
+        >
+          ✅ Confirmar paleta selecionada
+        </Button>
+      )}
+
       {/* Custom Color Picker - PRO and PREMIUM */}
       {canCustomize && (
         <div className="mt-4 border-t pt-4">
           <button
             onClick={() => setShowCustom(!showCustom)}
             className={`w-full flex items-center gap-3 rounded-xl border-2 p-3 transition-all text-left ${
-              showCustom || selectedId === 'custom'
+              showCustom || currentSelected === 'custom'
                 ? "border-primary shadow-card-hover"
                 : "border-border hover:border-primary/40 hover:shadow-card"
             }`}
@@ -145,7 +162,7 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPro, 
                 {isPremium ? "Configure cada cor manualmente com HEX" : "Personalize as 4 cores principais"}
               </p>
             </div>
-            {selectedId === 'custom' && (
+            {currentSelected === 'custom' && (
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
                 <Check className="h-4 w-4 text-primary-foreground" />
               </div>
