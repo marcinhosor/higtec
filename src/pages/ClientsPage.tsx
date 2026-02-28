@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Client, BRAZILIAN_STATES, generateId } from "@/lib/storage";
+import { BRAZILIAN_STATES } from "@/lib/storage";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Phone, MapPin, MessageCircle, Trash2, Edit, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,68 +12,119 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
-const defaultClient: Omit<Client, "id" | "createdAt" | "serviceHistory"> = {
-  name: "", phone: "", address: "", street: "", number: "", complement: "",
+interface ClientRow {
+  id: string;
+  company_id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
+  property_type: string | null;
+  observations: string | null;
+  service_history: any;
+  created_at: string;
+}
+
+const defaultForm = {
+  name: "", phone: "", street: "", number: "", complement: "",
   neighborhood: "", city: "", state: "", propertyType: "", observations: "",
 };
 
-function buildFullAddress(c: Omit<Client, "id" | "createdAt" | "serviceHistory">) {
-  const parts = [c.street, c.number, c.complement, c.neighborhood, c.city, c.state].filter(Boolean);
-  return parts.join(", ");
+function buildFullAddress(f: typeof defaultForm) {
+  return [f.street, f.number, f.complement, f.neighborhood, f.city, f.state].filter(Boolean).join(", ");
 }
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<Client[]>([]);
+  const { user } = useAuth();
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Client | null>(null);
-  const [form, setForm] = useState(defaultClient);
+  const [editing, setEditing] = useState<ClientRow | null>(null);
+  const [form, setForm] = useState(defaultForm);
+  const [loading, setLoading] = useState(true);
 
-  // Autocomplete data
-  const existingNeighborhoods = [...new Set(clients.map(c => c.neighborhood).filter(Boolean))];
-  const existingCities = [...new Set(clients.map(c => c.city).filter(Boolean))];
+  const existingNeighborhoods = [...new Set(clients.map(c => c.neighborhood).filter(Boolean))] as string[];
+  const existingCities = [...new Set(clients.map(c => c.city).filter(Boolean))] as string[];
 
-  useEffect(() => { setClients(db.getClients()); }, []);
+  const fetchClients = useCallback(async (cId: string) => {
+    const { data, error } = await supabase
+      .from("clients")
+      .select("*")
+      .eq("company_id", cId)
+      .order("name");
+    if (!error && data) setClients(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("get_user_company_id", { _user_id: user.id }).then(({ data }) => {
+      if (data) {
+        setCompanyId(data);
+        fetchClients(data);
+      }
+    });
+  }, [user, fetchClients]);
 
   const filtered = clients.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone.includes(search) ||
-    c.neighborhood?.toLowerCase().includes(search.toLowerCase()) ||
-    c.city?.toLowerCase().includes(search.toLowerCase())
+    (c.phone || "").includes(search) ||
+    (c.neighborhood || "").toLowerCase().includes(search.toLowerCase()) ||
+    (c.city || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    if (!companyId) return;
     const fullAddress = buildFullAddress(form);
-    let updated: Client[];
+
     if (editing) {
-      updated = clients.map(c => c.id === editing.id ? { ...c, ...form, address: fullAddress } : c);
+      const { error } = await supabase.from("clients").update({
+        name: form.name, phone: form.phone, address: fullAddress,
+        street: form.street, number: form.number, complement: form.complement,
+        neighborhood: form.neighborhood, city: form.city, state: form.state,
+        property_type: form.propertyType, observations: form.observations,
+      }).eq("id", editing.id);
+      if (error) { toast.error("Erro ao atualizar"); return; }
+      toast.success("Cliente atualizado!");
     } else {
-      const newClient: Client = { ...form, address: fullAddress, id: generateId(), createdAt: new Date().toISOString(), serviceHistory: [] };
-      updated = [...clients, newClient];
+      const { error } = await supabase.from("clients").insert({
+        company_id: companyId, name: form.name, phone: form.phone, address: fullAddress,
+        street: form.street, number: form.number, complement: form.complement,
+        neighborhood: form.neighborhood, city: form.city, state: form.state,
+        property_type: form.propertyType, observations: form.observations,
+      });
+      if (error) { toast.error("Erro ao salvar"); return; }
+      toast.success("Cliente adicionado!");
     }
-    db.saveClients(updated);
-    setClients(updated);
-    setForm(defaultClient);
+
+    setForm(defaultForm);
     setEditing(null);
     setOpen(false);
-    toast.success(editing ? "Cliente atualizado!" : "Cliente adicionado!");
+    fetchClients(companyId);
   };
 
-  const remove = (id: string) => {
-    const updated = clients.filter(c => c.id !== id);
-    db.saveClients(updated);
-    setClients(updated);
+  const remove = async (id: string) => {
+    if (!companyId) return;
+    const { error } = await supabase.from("clients").delete().eq("id", id);
+    if (error) { toast.error("Erro ao remover"); return; }
     toast.success("Cliente removido");
+    fetchClients(companyId);
   };
 
-  const openEdit = (c: Client) => {
+  const openEdit = (c: ClientRow) => {
     setEditing(c);
     setForm({
-      name: c.name, phone: c.phone, address: c.address,
-      street: c.street || '', number: c.number || '', complement: c.complement || '',
-      neighborhood: c.neighborhood || '', city: c.city || '', state: c.state || '',
-      propertyType: c.propertyType, observations: c.observations,
+      name: c.name, phone: c.phone || "", street: c.street || "",
+      number: c.number || "", complement: c.complement || "",
+      neighborhood: c.neighborhood || "", city: c.city || "", state: c.state || "",
+      propertyType: c.property_type || "", observations: c.observations || "",
     });
     setOpen(true);
   };
@@ -85,12 +138,19 @@ export default function ClientsPage() {
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, "_blank");
   };
 
+  const getDisplayAddress = (c: ClientRow) => {
+    if (c.street) {
+      return `${c.street}, ${c.number || ""}${c.neighborhood ? ` - ${c.neighborhood}` : ""}${c.city ? `, ${c.city}` : ""}${c.state ? `/${c.state}` : ""}`;
+    }
+    return c.address || "";
+  };
+
   return (
     <PageShell
       title="Clientes"
       showBack
       action={
-        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm(defaultClient); } }}>
+        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm(defaultForm); } }}>
           <DialogTrigger asChild>
             <Button size="sm" className="rounded-full gap-1">
               <Plus className="h-4 w-4" /> Novo
@@ -104,7 +164,6 @@ export default function ClientsPage() {
               <div><Label>Nome *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
               <div><Label>Telefone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
               
-              {/* Structured Address */}
               <div className="rounded-lg border p-3 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">📍 Endereço</p>
                 <div><Label className="text-xs">Rua</Label><Input value={form.street} onChange={e => setForm({...form, street: e.target.value})} placeholder="Nome da rua" /></div>
@@ -152,9 +211,13 @@ export default function ClientsPage() {
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente, bairro, cidade..." className="pl-9 rounded-full" />
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          <Users className="mx-auto h-12 w-12 mb-2 opacity-40" />
+          <UsersIcon className="mx-auto h-12 w-12 mb-2 opacity-40" />
           <p>Nenhum cliente cadastrado</p>
         </div>
       ) : (
@@ -167,10 +230,10 @@ export default function ClientsPage() {
                   {c.phone && <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5"><Phone className="h-3 w-3" /> {c.phone}</p>}
                   {(c.street || c.address) && (
                     <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
-                      <MapPin className="h-3 w-3" /> {c.street ? `${c.street}, ${c.number}${c.neighborhood ? ` - ${c.neighborhood}` : ''}${c.city ? `, ${c.city}` : ''}${c.state ? `/${c.state}` : ''}` : c.address}
+                      <MapPin className="h-3 w-3" /> {getDisplayAddress(c)}
                     </p>
                   )}
-                  {c.propertyType && <span className="mt-1 inline-block rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{c.propertyType}</span>}
+                  {c.property_type && <span className="mt-1 inline-block rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{c.property_type}</span>}
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => openEdit(c)} className="rounded-lg p-2 text-muted-foreground hover:bg-accent"><Edit className="h-4 w-4" /></button>
@@ -178,8 +241,8 @@ export default function ClientsPage() {
                 </div>
               </div>
               <div className="mt-3 flex gap-2">
-                {c.phone && <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openWhatsApp(c.phone)}><MessageCircle className="h-3.5 w-3.5" /> WhatsApp</Button>}
-                {(c.address || c.street) && <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openMaps(c.address || buildFullAddress(c))}><MapPin className="h-3.5 w-3.5" /> Rota</Button>}
+                {c.phone && <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openWhatsApp(c.phone!)}><MessageCircle className="h-3.5 w-3.5" /> WhatsApp</Button>}
+                {(c.address || c.street) && <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openMaps(c.address || buildFullAddress({ ...defaultForm, street: c.street || "", number: c.number || "", complement: c.complement || "", neighborhood: c.neighborhood || "", city: c.city || "", state: c.state || "" }))}><MapPin className="h-3.5 w-3.5" /> Rota</Button>}
               </div>
             </div>
           ))}
@@ -189,6 +252,6 @@ export default function ClientsPage() {
   );
 }
 
-function Users(props: any) {
+function UsersIcon(props: any) {
   return <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
 }
