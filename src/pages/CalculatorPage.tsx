@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Product, deductStock } from "@/lib/storage";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,17 +10,33 @@ import { Calculator, Package, Lock } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
+type ProductRow = {
+  id: string;
+  name: string;
+  current_stock_ml: number | null;
+};
+
 export default function CalculatorPage() {
+  const { user } = useAuth();
   const [dilution, setDilution] = useState("");
   const [volume, setVolume] = useState("");
   const [result, setResult] = useState<number | null>(null);
   const { isPro } = useCompanyPlan();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [selectedProductId, setSelectedProductId] = useState("");
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
-    setProducts(db.getProducts());
-  }, []);
+    if (!user) return;
+    supabase.rpc("get_user_company_id", { _user_id: user.id }).then(({ data }) => {
+      if (data) {
+        setCompanyId(data);
+        supabase.from("products").select("id, name, current_stock_ml").eq("company_id", data).order("name").then(({ data: prods }) => {
+          setProducts(prods || []);
+        });
+      }
+    });
+  }, [user]);
 
   const calculate = () => {
     const parts = dilution.split(":").map(s => parseFloat(s.trim()));
@@ -33,18 +50,27 @@ export default function CalculatorPage() {
     }
   };
 
-  const handleDeductStock = () => {
-    if (!result || !selectedProductId) {
+  const handleDeductStock = async () => {
+    if (!result || !selectedProductId || !companyId) {
       toast.error("Selecione um produto e calcule a diluição primeiro");
       return;
     }
-    const success = deductStock(selectedProductId, result, `Diluição ${dilution} - ${volume}L de água`);
-    if (success) {
-      toast.success(`Baixa de ${result}ml registrada no estoque!`);
-      setProducts(db.getProducts());
-    } else {
+    const product = products.find(p => p.id === selectedProductId);
+    if (!product) return;
+
+    const newStock = (product.current_stock_ml || 0) - result;
+    const { error } = await supabase.from("products").update({
+      current_stock_ml: Math.max(0, newStock),
+    }).eq("id", selectedProductId);
+
+    if (error) {
       toast.error("Erro ao atualizar estoque");
+      return;
     }
+    toast.success(`Baixa de ${result}ml registrada no estoque!`);
+    // Refresh products
+    const { data: prods } = await supabase.from("products").select("id, name, current_stock_ml").eq("company_id", companyId).order("name");
+    setProducts(prods || []);
   };
 
   const selectedProduct = products.find(p => p.id === selectedProductId);
@@ -64,7 +90,6 @@ export default function CalculatorPage() {
           </div>
 
           <div className="space-y-4">
-            {/* PRO: Product selector */}
             {isPro && products.length > 0 && (
               <div>
                 <Label>Produto (opcional)</Label>
@@ -73,14 +98,14 @@ export default function CalculatorPage() {
                   <SelectContent>
                     {products.map(p => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name} {p.availableVolume != null ? `(${p.availableVolume.toFixed(2)}L)` : ""}
+                        {p.name} {p.current_stock_ml != null ? `(${(p.current_stock_ml / 1000).toFixed(2)}L)` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedProduct?.availableVolume !== null && selectedProduct?.availableVolume !== undefined && (
+                {selectedProduct?.current_stock_ml != null && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Estoque atual: <span className="font-medium text-primary">{selectedProduct.availableVolume.toFixed(2)}L</span>
+                    Estoque atual: <span className="font-medium text-primary">{(selectedProduct.current_stock_ml / 1000).toFixed(2)}L</span>
                   </p>
                 )}
               </div>
@@ -88,23 +113,12 @@ export default function CalculatorPage() {
 
             <div>
               <Label>Diluição recomendada</Label>
-              <Input
-                value={dilution}
-                onChange={e => setDilution(e.target.value)}
-                placeholder="Ex: 1:10"
-                className="mt-1"
-              />
+              <Input value={dilution} onChange={e => setDilution(e.target.value)} placeholder="Ex: 1:10" className="mt-1" />
               <p className="text-xs text-muted-foreground mt-1">Formato: 1:10, 1:20, etc.</p>
             </div>
             <div>
               <Label>Volume de água (litros)</Label>
-              <Input
-                type="number"
-                value={volume}
-                onChange={e => setVolume(e.target.value)}
-                placeholder="Ex: 5"
-                className="mt-1"
-              />
+              <Input type="number" value={volume} onChange={e => setVolume(e.target.value)} placeholder="Ex: 5" className="mt-1" />
             </div>
             <Button onClick={calculate} className="w-full rounded-full">Calcular</Button>
           </div>
@@ -114,13 +128,10 @@ export default function CalculatorPage() {
           <div className="rounded-xl gradient-primary p-6 text-center shadow-card animate-scale-in">
             <p className="text-sm text-primary-foreground/80 font-medium">Quantidade de produto</p>
             <p className="text-4xl font-extrabold text-primary-foreground mt-1">{result} ml</p>
-            <p className="text-xs text-primary-foreground/70 mt-2">
-              Para {volume}L de água na diluição {dilution}
-            </p>
+            <p className="text-xs text-primary-foreground/70 mt-2">Para {volume}L de água na diluição {dilution}</p>
           </div>
         )}
 
-        {/* PRO: Deduct stock button */}
         {result !== null && isPro && selectedProductId && (
           <div className="rounded-xl bg-card p-4 shadow-card animate-fade-in">
             <Button onClick={handleDeductStock} className="w-full rounded-full gap-2" variant="outline">

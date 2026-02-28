@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Product, Manufacturer, generateId, getPhSuggestion, calculateStockStatus, restockProduct } from "@/lib/storage";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Plus, Trash2, FlaskConical, Beaker, Lock, DollarSign, PackagePlus, AlertTriangle, Package, Check, ChevronsUpDown, Factory, Edit } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { getPhSuggestion } from "@/lib/storage";
 
 const productTypes = ["Detergente", "Desengraxante", "Neutralizador", "Impermeabilizante", "Sanitizante", "Solvente", "Outro"];
 const paymentMethods = [
@@ -36,8 +38,38 @@ function ProBadge() {
   );
 }
 
-function StockBadge({ status }: { status: Product["stockStatus"] }) {
-  if (status === "normal") return null;
+type ProductRow = {
+  id: string;
+  company_id: string;
+  name: string;
+  manufacturer: string | null;
+  type: string | null;
+  ph: number | null;
+  dilution: string | null;
+  cost_per_liter: number | null;
+  current_stock_ml: number | null;
+  min_stock_ml: number | null;
+  stock_status: string | null;
+  consumption_history: any;
+  last_restock_date: string | null;
+  created_at: string;
+};
+
+type ManufacturerRow = {
+  id: string;
+  company_id: string;
+  name: string;
+};
+
+function calcStockStatus(current: number | null, min: number | null): string {
+  if (current == null || min == null || min <= 0) return "ok";
+  if (current <= min) return "critico";
+  if (current <= min * 2) return "baixo";
+  return "ok";
+}
+
+function StockBadge({ status }: { status: string }) {
+  if (status === "ok") return null;
   const isCritical = status === "critico";
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${isCritical ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning"}`}>
@@ -48,32 +80,42 @@ function StockBadge({ status }: { status: Product["stockStatus"] }) {
 }
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
+  const { user } = useAuth();
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [manufacturers, setManufacturers] = useState<ManufacturerRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState<string | null>(null);
   const [restockForm, setRestockForm] = useState({ volume: "", price: "" });
   const { isPro } = useCompanyPlan();
   const [mfgOpen, setMfgOpen] = useState(false);
   const [mfgSearch, setMfgSearch] = useState("");
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const emptyForm = { name: "", manufacturer: "", purchaseDate: "", type: "", ph: "", pricePaid: "", volumeLiters: "", paymentMethod: "", minAlertVolume: "" };
+  const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+
+  const emptyForm = { name: "", manufacturer: "", type: "", ph: "", costPerLiter: "", currentStockMl: "", minStockMl: "" };
   const [form, setForm] = useState(emptyForm);
 
-  const reload = () => {
-    setProducts(db.getProducts());
-    setManufacturers(db.getManufacturers());
-  };
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("get_user_company_id", { _user_id: user.id }).then(({ data }) => {
+      if (data) setCompanyId(data);
+    });
+  }, [user]);
+
+  const reload = useCallback(async (cId: string) => {
+    const [{ data: prods }, { data: mfgs }] = await Promise.all([
+      supabase.from("products").select("*").eq("company_id", cId).order("name"),
+      supabase.from("manufacturers").select("*").eq("company_id", cId).order("name"),
+    ]);
+    setProducts(prods || []);
+    setManufacturers(mfgs || []);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    reload();
-    // Seed manufacturers from existing products
-    const existingProducts = db.getProducts();
-    existingProducts.forEach(p => {
-      if (p.manufacturer?.trim()) db.addManufacturer(p.manufacturer.trim());
-    });
-    setManufacturers(db.getManufacturers());
-  }, []);
+    if (companyId) reload(companyId);
+  }, [companyId, reload]);
 
   const filteredManufacturers = useMemo(() => {
     if (!mfgSearch) return manufacturers;
@@ -89,95 +131,107 @@ export default function ProductsPage() {
     setMfgSearch("");
   };
 
-  const addNewManufacturer = () => {
+  const addNewManufacturer = async () => {
     const name = mfgSearch.trim();
-    if (!name) return;
-    db.addManufacturer(name);
-    setManufacturers(db.getManufacturers());
+    if (!name || !companyId) return;
+    await supabase.from("manufacturers").insert({ name, company_id: companyId });
+    reload(companyId);
     selectManufacturer(name);
     toast.success(`Fabricante "${name}" adicionado!`);
   };
 
-  const openEditProduct = (p: Product) => {
+  const openEditProduct = (p: ProductRow) => {
     setEditingProduct(p);
     setForm({
-      name: p.name, manufacturer: p.manufacturer, purchaseDate: p.purchaseDate, type: p.type,
-      ph: p.ph !== null ? String(p.ph) : "", pricePaid: p.pricePaid !== null ? String(p.pricePaid) : "",
-      volumeLiters: p.volumeLiters !== null ? String(p.volumeLiters) : "",
-      paymentMethod: p.paymentMethod || "", minAlertVolume: p.minAlertVolume !== null ? String(p.minAlertVolume) : "",
+      name: p.name,
+      manufacturer: p.manufacturer || "",
+      type: p.type || "",
+      ph: p.ph != null ? String(p.ph) : "",
+      costPerLiter: p.cost_per_liter != null ? String(p.cost_per_liter) : "",
+      currentStockMl: p.current_stock_ml != null ? String(p.current_stock_ml) : "",
+      minStockMl: p.min_stock_ml != null ? String(p.min_stock_ml) : "",
     });
     setOpen(true);
   };
 
-  const save = () => {
-    if (!form.name.trim()) { toast.error("Nome é obrigatório"); return; }
-    if (form.manufacturer.trim()) db.addManufacturer(form.manufacturer.trim());
-    const vol = isPro && form.volumeLiters ? parseFloat(form.volumeLiters) : null;
+  const save = async () => {
+    if (!form.name.trim() || !companyId) { toast.error("Nome é obrigatório"); return; }
 
-    if (editingProduct) {
-      const updated = products.map(p => p.id === editingProduct.id ? {
-        ...p,
-        name: form.name, manufacturer: form.manufacturer, purchaseDate: form.purchaseDate,
-        type: form.type, ph: form.ph ? parseFloat(form.ph) : null,
-        pricePaid: isPro && form.pricePaid ? parseFloat(form.pricePaid) : p.pricePaid,
-        paymentMethod: isPro ? (form.paymentMethod as Product["paymentMethod"]) : p.paymentMethod,
-        volumeLiters: vol ?? p.volumeLiters,
-        minAlertVolume: isPro && form.minAlertVolume ? parseFloat(form.minAlertVolume) : p.minAlertVolume,
-        stockStatus: calculateStockStatus(p),
-      } : p);
-      db.saveProducts(updated);
-      setProducts(updated);
-      setEditingProduct(null);
-      setOpen(false);
-      setForm(emptyForm);
-      setManufacturers(db.getManufacturers());
-      toast.success("Produto atualizado!");
-      return;
+    // Ensure manufacturer exists
+    if (form.manufacturer.trim()) {
+      const exists = manufacturers.some(m => m.name.toLowerCase() === form.manufacturer.trim().toLowerCase());
+      if (!exists) {
+        await supabase.from("manufacturers").insert({ name: form.manufacturer.trim(), company_id: companyId });
+      }
     }
 
-    const product: Product = {
-      id: generateId(),
-      name: form.name, manufacturer: form.manufacturer, purchaseDate: form.purchaseDate,
-      type: form.type, ph: form.ph ? parseFloat(form.ph) : null,
-      pricePaid: isPro && form.pricePaid ? parseFloat(form.pricePaid) : null,
-      paymentMethod: isPro ? (form.paymentMethod as Product["paymentMethod"]) : "",
-      volumeLiters: vol, initialVolume: vol, availableVolume: vol,
-      minAlertVolume: isPro && form.minAlertVolume ? parseFloat(form.minAlertVolume) : null,
-      stockStatus: "normal", consumptionHistory: [],
-      consumptionPerService: null, costPerService: null, profitMargin: null,
+    const currentMl = isPro && form.currentStockMl ? parseFloat(form.currentStockMl) : null;
+    const minMl = isPro && form.minStockMl ? parseFloat(form.minStockMl) : null;
+
+    const record: any = {
+      name: form.name,
+      manufacturer: form.manufacturer || null,
+      type: form.type || null,
+      ph: form.ph ? parseFloat(form.ph) : null,
+      cost_per_liter: isPro && form.costPerLiter ? parseFloat(form.costPerLiter) : null,
+      current_stock_ml: currentMl,
+      min_stock_ml: minMl,
+      stock_status: calcStockStatus(currentMl, minMl),
     };
-    const updated = [...products, product];
-    db.saveProducts(updated);
-    setProducts(updated);
+
+    if (editingProduct) {
+      const { error } = await supabase.from("products").update(record).eq("id", editingProduct.id);
+      if (error) { toast.error("Erro ao atualizar"); return; }
+      toast.success("Produto atualizado!");
+    } else {
+      record.company_id = companyId;
+      const { error } = await supabase.from("products").insert(record);
+      if (error) { toast.error("Erro ao cadastrar"); return; }
+      toast.success("Produto cadastrado!");
+    }
+
     setOpen(false);
+    setEditingProduct(null);
     setForm(emptyForm);
-    setManufacturers(db.getManufacturers());
-    toast.success("Produto cadastrado!");
+    reload(companyId);
   };
 
-  const remove = (id: string) => {
-    const updated = products.filter(p => p.id !== id);
-    db.saveProducts(updated);
-    setProducts(updated);
+  const remove = async (id: string) => {
+    await supabase.from("products").delete().eq("id", id);
+    if (companyId) reload(companyId);
     toast.success("Produto removido");
   };
 
-  const handleRestock = () => {
-    if (!restockOpen) return;
+  const handleRestock = async () => {
+    if (!restockOpen || !companyId) return;
     const vol = parseFloat(restockForm.volume);
     const price = parseFloat(restockForm.price);
     if (!vol || vol <= 0) { toast.error("Informe o volume"); return; }
-    restockProduct(restockOpen, vol, price || 0);
-    reload();
+
+    const product = products.find(p => p.id === restockOpen);
+    if (!product) return;
+
+    const newStockMl = (product.current_stock_ml || 0) + vol * 1000;
+    // Recalc cost_per_liter as weighted average
+    const oldTotal = (product.cost_per_liter || 0) * ((product.current_stock_ml || 0) / 1000);
+    const newTotal = oldTotal + (price || 0);
+    const totalLiters = newStockMl / 1000;
+    const newCostPerLiter = totalLiters > 0 ? newTotal / totalLiters : product.cost_per_liter;
+
+    await supabase.from("products").update({
+      current_stock_ml: newStockMl,
+      cost_per_liter: newCostPerLiter,
+      stock_status: calcStockStatus(newStockMl, product.min_stock_ml),
+      last_restock_date: new Date().toISOString().split("T")[0],
+    }).eq("id", restockOpen);
+
+    reload(companyId);
     setRestockOpen(null);
     setRestockForm({ volume: "", price: "" });
     toast.success("Estoque atualizado!");
   };
 
   const phSuggestion = form.ph ? getPhSuggestion(parseFloat(form.ph)) : "";
-  const costPerLiter = form.pricePaid && form.volumeLiters
-    ? parseFloat(form.pricePaid) / parseFloat(form.volumeLiters)
-    : null;
 
   return (
     <PageShell
@@ -232,10 +286,9 @@ export default function ProductsPage() {
                   </PopoverContent>
                 </Popover>
               </div>
-              <div><Label>Data da Compra</Label><Input type="date" value={form.purchaseDate} onChange={e => setForm({...form, purchaseDate: e.target.value})} /></div>
               <div>
                 <Label>Tipo</Label>
-                <Select onValueChange={v => setForm({...form, type: v})}>
+                <Select value={form.type} onValueChange={v => setForm({...form, type: v})}>
                   <SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                   <SelectContent>
                     {productTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
@@ -260,33 +313,18 @@ export default function ProductsPage() {
                     <DollarSign className="h-3.5 w-3.5" /> Controle Financeiro PRO
                   </div>
                   <div>
-                    <Label>Valor Pago (R$)</Label>
-                    <Input type="number" step="0.01" min="0" value={form.pricePaid} onChange={e => setForm({...form, pricePaid: e.target.value})} placeholder="0,00" />
+                    <Label>Custo por Litro (R$)</Label>
+                    <Input type="number" step="0.01" min="0" value={form.costPerLiter} onChange={e => setForm({...form, costPerLiter: e.target.value})} placeholder="0,00" />
                   </div>
                   <div>
-                    <Label>Forma de Pagamento</Label>
-                    <Select onValueChange={v => setForm({...form, paymentMethod: v})}>
-                      <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                      <SelectContent>
-                        {paymentMethods.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <Label>Estoque Atual (ml)</Label>
+                    <Input type="number" step="1" min="0" value={form.currentStockMl} onChange={e => setForm({...form, currentStockMl: e.target.value})} placeholder="Ex: 5000" />
                   </div>
                   <div>
-                    <Label>Volume Total (litros)</Label>
-                    <Input type="number" step="0.1" min="0" value={form.volumeLiters} onChange={e => setForm({...form, volumeLiters: e.target.value})} placeholder="Ex: 5" />
-                  </div>
-                  <div>
-                    <Label>Volume Mínimo de Alerta (litros)</Label>
-                    <Input type="number" step="0.1" min="0" value={form.minAlertVolume} onChange={e => setForm({...form, minAlertVolume: e.target.value})} placeholder="Ex: 0.5" />
+                    <Label>Estoque Mínimo de Alerta (ml)</Label>
+                    <Input type="number" step="1" min="0" value={form.minStockMl} onChange={e => setForm({...form, minStockMl: e.target.value})} placeholder="Ex: 500" />
                     <p className="text-xs text-muted-foreground mt-1">Alerta crítico quando atingir este volume</p>
                   </div>
-                  {costPerLiter !== null && costPerLiter > 0 && (
-                    <div className="rounded-lg bg-primary/10 p-3 text-sm animate-fade-in">
-                      <p className="text-muted-foreground text-xs">Custo por litro:</p>
-                      <p className="text-lg font-bold text-primary">{formatCurrency(costPerLiter)}</p>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="border-t border-border pt-3 space-y-2">
@@ -320,7 +358,9 @@ export default function ProductsPage() {
         </DialogContent>
       </Dialog>
 
-      {products.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-12 text-muted-foreground">Carregando...</div>
+      ) : products.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Beaker className="mx-auto h-12 w-12 mb-2 opacity-40" />
           <p>Nenhum produto cadastrado</p>
@@ -328,12 +368,13 @@ export default function ProductsPage() {
       ) : (
         <div className="space-y-3">
           {products.map(p => {
-            const pCostPerLiter = p.pricePaid && p.volumeLiters ? p.pricePaid / p.volumeLiters : null;
-            const pmLabel = paymentMethods.find(m => m.value === p.paymentMethod)?.label;
-            const stockPercent = p.initialVolume && p.availableVolume != null ? Math.round((p.availableVolume / p.initialVolume) * 100) : null;
-            const currentStatus = calculateStockStatus(p);
+            const costPerLiter = p.cost_per_liter;
+            const currentStatus = calcStockStatus(p.current_stock_ml, p.min_stock_ml);
             const isCritical = currentStatus === "critico";
             const isLow = currentStatus === "baixo";
+            const stockPercent = p.current_stock_ml != null && p.min_stock_ml != null && p.min_stock_ml > 0
+              ? Math.min(100, Math.round((p.current_stock_ml / (p.min_stock_ml * 4)) * 100))
+              : null;
 
             return (
               <div key={p.id} className={`rounded-xl bg-card p-4 shadow-card animate-fade-in ${isCritical ? "border-l-4 border-l-destructive" : isLow ? "border-l-4 border-l-warning" : ""}`}>
@@ -346,14 +387,14 @@ export default function ProductsPage() {
                     {p.manufacturer && <p className="text-sm text-muted-foreground">{p.manufacturer}</p>}
                     <div className="flex gap-2 mt-1 flex-wrap">
                       {p.type && <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{p.type}</span>}
-                      {p.ph !== null && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary font-medium">pH {p.ph}</span>}
+                      {p.ph != null && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary font-medium">pH {p.ph}</span>}
                     </div>
-                    {p.ph !== null && (
+                    {p.ph != null && (
                       <p className="text-xs text-muted-foreground mt-2">{getPhSuggestion(p.ph)}</p>
                     )}
 
                     {/* PRO stock display */}
-                    {isPro && p.availableVolume != null && p.initialVolume != null && (
+                    {isPro && p.current_stock_ml != null && (
                       <div className="mt-3 rounded-lg bg-accent/50 border border-border p-3 space-y-2">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                           <Package className="h-3.5 w-3.5" /> Estoque
@@ -361,18 +402,12 @@ export default function ProductsPage() {
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Disponível</span>
                           <span className={`font-bold ${isCritical ? "text-destructive" : isLow ? "text-warning" : "text-primary"}`}>
-                            {p.availableVolume.toFixed(2)}L / {p.initialVolume.toFixed(2)}L
+                            {(p.current_stock_ml / 1000).toFixed(2)}L
                           </span>
                         </div>
                         {stockPercent !== null && (
                           <Progress value={stockPercent} className={`h-2 ${isCritical ? "[&>div]:bg-destructive" : isLow ? "[&>div]:bg-warning" : ""}`} />
                         )}
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>{stockPercent}% restante</span>
-                          {p.consumptionHistory && p.consumptionHistory.length > 0 && (
-                            <span>{p.consumptionHistory.length} uso(s)</span>
-                          )}
-                        </div>
                         <Button size="sm" variant="outline" className="w-full rounded-full gap-1 text-xs mt-1" onClick={() => { setRestockOpen(p.id); setRestockForm({ volume: "", price: "" }); }}>
                           <PackagePlus className="h-3.5 w-3.5" /> Repor Estoque
                         </Button>
@@ -380,32 +415,12 @@ export default function ProductsPage() {
                     )}
 
                     {/* PRO financial display */}
-                    {isPro && (p.pricePaid || p.volumeLiters) && (
+                    {isPro && costPerLiter != null && costPerLiter > 0 && (
                       <div className="mt-3 rounded-lg bg-primary/5 border border-primary/10 p-3 space-y-1">
-                        {p.pricePaid !== null && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Valor pago</span>
-                            <span className="font-medium text-foreground">{formatCurrency(p.pricePaid)}</span>
-                          </div>
-                        )}
-                        {pmLabel && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Pagamento</span>
-                            <span className="text-foreground">{pmLabel}</span>
-                          </div>
-                        )}
-                        {p.volumeLiters !== null && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Volume total</span>
-                            <span className="text-foreground">{p.volumeLiters}L</span>
-                          </div>
-                        )}
-                        {pCostPerLiter !== null && (
-                          <div className="flex justify-between text-sm border-t border-primary/10 pt-1 mt-1">
-                            <span className="text-muted-foreground font-medium">Custo/litro</span>
-                            <span className="font-bold text-primary">{formatCurrency(pCostPerLiter)}</span>
-                          </div>
-                        )}
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Custo/litro</span>
+                          <span className="font-bold text-primary">{formatCurrency(costPerLiter)}</span>
+                        </div>
                       </div>
                     )}
                   </div>
