@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PageShell from "@/components/PageShell";
-import { db, Equipment, generateId } from "@/lib/storage";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Plus, Wrench, Edit, Trash2, AlertTriangle, CheckCircle2, PauseCircle, XCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function getMaintenanceUrgency(nextDate: string): { label: string; class: string } | null {
+function getMaintenanceUrgency(nextDate: string | null): { label: string; class: string } | null {
   if (!nextDate) return null;
   const now = new Date();
   const next = new Date(nextDate);
@@ -35,23 +36,53 @@ function getMaintenanceUrgency(nextDate: string): { label: string; class: string
   return null;
 }
 
+type EquipmentRow = {
+  id: string;
+  company_id: string;
+  name: string;
+  model: string | null;
+  serial_number: string | null;
+  purchase_date: string | null;
+  purchase_cost: number | null;
+  status: string | null;
+  next_maintenance_date: string | null;
+  maintenance_cost: number | null;
+  observations: string | null;
+};
+
 export default function EquipmentPage() {
+  const { user } = useAuth();
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const { planTier } = useCompanyPlan();
   const isPremium = planTier === "premium";
-  const { showModal, setShowModal, checkPro } = useProGate();
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const { showModal, setShowModal } = useProGate();
+  const [equipment, setEquipment] = useState<EquipmentRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Equipment | null>(null);
+  const [editing, setEditing] = useState<EquipmentRow | null>(null);
 
   const emptyForm = {
     name: "", model: "", serialNumber: "", purchaseDate: "", purchaseCost: "",
-    status: "operacional" as Equipment["status"], lastMaintenance: "", nextMaintenance: "",
-    maintenanceCost: "", observations: "",
+    status: "operacional", nextMaintenance: "", maintenanceCost: "", observations: "",
   };
   const [form, setForm] = useState(emptyForm);
 
-  const reload = () => setEquipment(db.getEquipment());
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("get_user_company_id", { _user_id: user.id }).then(({ data }) => {
+      if (data) setCompanyId(data);
+    });
+  }, [user]);
+
+  const reload = useCallback(async (cId: string) => {
+    const { data } = await supabase.from("equipment").select("*").eq("company_id", cId).order("name");
+    setEquipment(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (companyId) reload(companyId);
+  }, [companyId, reload]);
 
   if (!isPremium) {
     return (
@@ -71,53 +102,52 @@ export default function EquipmentPage() {
     );
   }
 
-  const openEdit = (eq: Equipment) => {
+  const openEdit = (eq: EquipmentRow) => {
     setEditing(eq);
     setForm({
-      name: eq.name, model: eq.model, serialNumber: eq.serialNumber,
-      purchaseDate: eq.purchaseDate, purchaseCost: eq.purchaseCost != null ? String(eq.purchaseCost) : "",
-      status: eq.status, lastMaintenance: eq.lastMaintenance, nextMaintenance: eq.nextMaintenance,
-      maintenanceCost: eq.maintenanceCost != null ? String(eq.maintenanceCost) : "",
-      observations: eq.observations,
+      name: eq.name, model: eq.model || "", serialNumber: eq.serial_number || "",
+      purchaseDate: eq.purchase_date || "", purchaseCost: eq.purchase_cost != null ? String(eq.purchase_cost) : "",
+      status: eq.status || "operacional", nextMaintenance: eq.next_maintenance_date || "",
+      maintenanceCost: eq.maintenance_cost != null ? String(eq.maintenance_cost) : "",
+      observations: eq.observations || "",
     });
     setOpen(true);
   };
 
-  const save = () => {
-    if (!form.name.trim()) { toast.error("Nome é obrigatório"); return; }
+  const save = async () => {
+    if (!form.name.trim() || !companyId) { toast.error("Nome é obrigatório"); return; }
+
+    const record: any = {
+      name: form.name,
+      model: form.model || null,
+      serial_number: form.serialNumber || null,
+      purchase_date: form.purchaseDate || null,
+      purchase_cost: form.purchaseCost ? parseFloat(form.purchaseCost) : null,
+      status: form.status,
+      next_maintenance_date: form.nextMaintenance || null,
+      maintenance_cost: form.maintenanceCost ? parseFloat(form.maintenanceCost) : null,
+      observations: form.observations || null,
+    };
+
     if (editing) {
-      const updated = equipment.map(eq => eq.id === editing.id ? {
-        ...eq, name: form.name, model: form.model, serialNumber: form.serialNumber,
-        purchaseDate: form.purchaseDate, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : null,
-        status: form.status, lastMaintenance: form.lastMaintenance, nextMaintenance: form.nextMaintenance,
-        maintenanceCost: form.maintenanceCost ? parseFloat(form.maintenanceCost) : null,
-        observations: form.observations,
-      } : eq);
-      db.saveEquipment(updated);
-      setEquipment(updated);
+      const { error } = await supabase.from("equipment").update(record).eq("id", editing.id);
+      if (error) { toast.error("Erro ao atualizar"); return; }
       toast.success("Equipamento atualizado!");
     } else {
-      const newEq: Equipment = {
-        id: generateId(), name: form.name, model: form.model, serialNumber: form.serialNumber,
-        purchaseDate: form.purchaseDate, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : null,
-        status: form.status, lastMaintenance: form.lastMaintenance, nextMaintenance: form.nextMaintenance,
-        maintenanceCost: form.maintenanceCost ? parseFloat(form.maintenanceCost) : null,
-        observations: form.observations, createdAt: new Date().toISOString(),
-      };
-      const updated = [...equipment, newEq];
-      db.saveEquipment(updated);
-      setEquipment(updated);
+      record.company_id = companyId;
+      const { error } = await supabase.from("equipment").insert(record);
+      if (error) { toast.error("Erro ao cadastrar"); return; }
       toast.success("Equipamento cadastrado!");
     }
     setOpen(false);
     setEditing(null);
     setForm(emptyForm);
+    reload(companyId);
   };
 
-  const remove = (id: string) => {
-    const updated = equipment.filter(eq => eq.id !== id);
-    db.saveEquipment(updated);
-    setEquipment(updated);
+  const remove = async (id: string) => {
+    await supabase.from("equipment").delete().eq("id", id);
+    if (companyId) reload(companyId);
     toast.success("Equipamento removido");
   };
 
@@ -140,14 +170,13 @@ export default function EquipmentPage() {
               <div><Label>Custo de Aquisição (R$)</Label><Input type="number" step="0.01" min="0" value={form.purchaseCost} onChange={e => setForm({ ...form, purchaseCost: e.target.value })} /></div>
               <div>
                 <Label>Status</Label>
-                <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Equipment["status"] })}>
+                <Select value={form.status} onValueChange={v => setForm({ ...form, status: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {statusOptions.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Última Manutenção</Label><Input type="date" value={form.lastMaintenance} onChange={e => setForm({ ...form, lastMaintenance: e.target.value })} /></div>
               <div><Label>Próxima Manutenção</Label><Input type="date" value={form.nextMaintenance} onChange={e => setForm({ ...form, nextMaintenance: e.target.value })} /></div>
               <div><Label>Custo de Manutenção (R$)</Label><Input type="number" step="0.01" min="0" value={form.maintenanceCost} onChange={e => setForm({ ...form, maintenanceCost: e.target.value })} /></div>
               <div><Label>Observações</Label><Textarea value={form.observations} onChange={e => setForm({ ...form, observations: e.target.value })} rows={3} /></div>
@@ -157,7 +186,9 @@ export default function EquipmentPage() {
         </Dialog>
       }
     >
-      {equipment.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-12 text-muted-foreground">Carregando...</div>
+      ) : equipment.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Wrench className="mx-auto h-12 w-12 mb-2 opacity-40" />
           <p>Nenhum equipamento cadastrado</p>
@@ -165,8 +196,8 @@ export default function EquipmentPage() {
       ) : (
         <div className="space-y-3">
           {equipment.map(eq => {
-            const st = statusOptions.find(s => s.value === eq.status)!;
-            const urgency = getMaintenanceUrgency(eq.nextMaintenance);
+            const st = statusOptions.find(s => s.value === eq.status) || statusOptions[0];
+            const urgency = getMaintenanceUrgency(eq.next_maintenance_date);
             const StatusIcon = st.icon;
 
             return (
@@ -178,7 +209,7 @@ export default function EquipmentPage() {
                       <StatusIcon className={`h-4 w-4 ${st.color}`} />
                     </div>
                     {eq.model && <p className="text-sm text-muted-foreground">{eq.model}</p>}
-                    {eq.serialNumber && <p className="text-xs text-muted-foreground">S/N: {eq.serialNumber}</p>}
+                    {eq.serial_number && <p className="text-xs text-muted-foreground">S/N: {eq.serial_number}</p>}
 
                     <div className="flex gap-2 mt-2 flex-wrap">
                       <Badge variant="outline" className="text-xs">{st.label}</Badge>
@@ -191,11 +222,10 @@ export default function EquipmentPage() {
                     </div>
 
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      {eq.purchaseDate && <div>Compra: {new Date(eq.purchaseDate).toLocaleDateString("pt-BR")}</div>}
-                      {eq.purchaseCost != null && <div>Custo: {formatCurrency(eq.purchaseCost)}</div>}
-                      {eq.lastMaintenance && <div>Última man.: {new Date(eq.lastMaintenance).toLocaleDateString("pt-BR")}</div>}
-                      {eq.nextMaintenance && <div>Próxima: {new Date(eq.nextMaintenance).toLocaleDateString("pt-BR")}</div>}
-                      {eq.maintenanceCost != null && <div>Custo man.: {formatCurrency(eq.maintenanceCost)}</div>}
+                      {eq.purchase_date && <div>Compra: {new Date(eq.purchase_date).toLocaleDateString("pt-BR")}</div>}
+                      {eq.purchase_cost != null && <div>Custo: {formatCurrency(eq.purchase_cost)}</div>}
+                      {eq.next_maintenance_date && <div>Próxima: {new Date(eq.next_maintenance_date).toLocaleDateString("pt-BR")}</div>}
+                      {eq.maintenance_cost != null && <div>Custo man.: {formatCurrency(eq.maintenance_cost)}</div>}
                     </div>
                     {eq.observations && <p className="text-xs text-muted-foreground mt-2 italic">{eq.observations}</p>}
                   </div>
