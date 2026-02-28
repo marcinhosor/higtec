@@ -128,18 +128,28 @@ export default function ThemeSelector({ selectedId, onSelect, canChange, isPro, 
         })}
       </div>
 
-      {/* Confirm palette button */}
+      {/* Confirm/Cancel palette button */}
       {pendingId && pendingId !== selectedId && !showCustom && (
-        <Button
-          onClick={() => {
-            onSelect(pendingId);
-            setPendingId(null);
-          }}
-          className="w-full rounded-full gap-2"
-          size="sm"
-        >
-          ✅ Confirmar paleta selecionada
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => {
+              onSelect(pendingId);
+              setPendingId(null);
+            }}
+            className="flex-1 rounded-full gap-2"
+            size="sm"
+          >
+            ✅ Sim, confirmar paleta
+          </Button>
+          <Button
+            onClick={() => setPendingId(null)}
+            variant="outline"
+            className="flex-1 rounded-full gap-2"
+            size="sm"
+          >
+            ❌ Cancelar
+          </Button>
+        </div>
       )}
 
       {/* Custom Color Picker - PRO and PREMIUM */}
