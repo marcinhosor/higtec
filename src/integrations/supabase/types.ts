@@ -380,6 +380,62 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          company_id: string
+          created_at: string
+          dismissed: boolean
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          level: string
+          message: string
+          read: boolean
+          title: string
+          type: string
+          updated_at: string
+          whatsapp_sent: boolean
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          dismissed?: boolean
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          level?: string
+          message: string
+          read?: boolean
+          title: string
+          type: string
+          updated_at?: string
+          whatsapp_sent?: boolean
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          dismissed?: boolean
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          level?: string
+          message?: string
+          read?: boolean
+          title?: string
+          type?: string
+          updated_at?: string
+          whatsapp_sent?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           company_id: string
