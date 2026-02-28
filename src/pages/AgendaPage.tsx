@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import PageShell from "@/components/PageShell";
-import { db, Appointment, Client, Collaborator, BRAZILIAN_STATES, generateId } from "@/lib/storage";
+import { BRAZILIAN_STATES } from "@/lib/storage";
+import { supabase } from "@/integrations/supabase/client";
+import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { Plus, Check, Clock, MapPin, Trash2, Edit, User, Play } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,79 +13,147 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
+interface AppointmentRow {
+  id: string;
+  company_id: string;
+  client_id: string;
+  client_name: string;
+  date: string;
+  time: string;
+  service: string | null;
+  status: string | null;
+  notes: string | null;
+  collaborator_id: string | null;
+  collaborator_name: string | null;
+}
+
+interface ClientRow {
+  id: string;
+  company_id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
+  observations: string | null;
+  property_type: string | null;
+  service_history: any;
+}
+
+interface CollaboratorRow {
+  id: string;
+  name: string;
+  role: string | null;
+  status: string | null;
+}
+
 export default function AgendaPage() {
   const navigate = useNavigate();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const { companyId } = useCompanyPlan();
+  const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [collaborators, setCollaborators] = useState<CollaboratorRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [editingAppt, setEditingAppt] = useState<Appointment | null>(null);
+  const [editingAppt, setEditingAppt] = useState<AppointmentRow | null>(null);
   const [editClientOpen, setEditClientOpen] = useState(false);
-  const [editClientData, setEditClientData] = useState<Client | null>(null);
+  const [editClientData, setEditClientData] = useState<ClientRow | null>(null);
   const [form, setForm] = useState({ clientId: "", clientName: "", date: "", time: "", serviceType: "", observations: "", technicianId: "", technicianName: "" });
 
+  const loadData = useCallback(async () => {
+    if (!companyId) return;
+    setLoading(true);
+    try {
+      const [apptRes, clientRes, collabRes] = await Promise.all([
+        supabase.from("appointments").select("*").eq("company_id", companyId).order("date", { ascending: true }),
+        supabase.from("clients").select("*").eq("company_id", companyId).order("name"),
+        supabase.from("collaborators").select("*").eq("company_id", companyId).eq("status", "ativo").order("name"),
+      ]);
+      if (apptRes.data) setAppointments(apptRes.data);
+      if (clientRes.data) setClients(clientRes.data);
+      if (collabRes.data) setCollaborators(collabRes.data);
+    } catch (err) {
+      console.error("Error loading agenda data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId]);
+
   useEffect(() => {
-    setAppointments(db.getAppointments());
-    setClients(db.getClients());
-    setCollaborators(db.getCollaborators().filter(c => c.status === 'ativo'));
-  }, []);
+    loadData();
+  }, [loadData]);
 
   const resetForm = () => {
     setForm({ clientId: "", clientName: "", date: "", time: "", serviceType: "", observations: "", technicianId: "", technicianName: "" });
     setEditingAppt(null);
   };
 
-  // Get busy times for a given date
   const getBusyTimes = (date: string, excludeId?: string) => {
     return appointments
-      .filter(a => a.date === date && a.status === 'agendado' && a.id !== excludeId)
+      .filter(a => a.date === date && a.status === "pending" && a.id !== excludeId)
       .map(a => a.time)
       .filter(Boolean);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.clientName.trim() || !form.date) { toast.error("Preencha cliente e data"); return; }
+    if (!companyId) { toast.error("Empresa não encontrada"); return; }
+
+    const payload = {
+      company_id: companyId,
+      client_id: form.clientId || "manual",
+      client_name: form.clientName,
+      date: form.date,
+      time: form.time,
+      service: form.serviceType,
+      notes: form.observations,
+      collaborator_id: form.technicianId || null,
+      collaborator_name: form.technicianName || null,
+    };
 
     if (editingAppt) {
-      const updated = appointments.map(a => a.id === editingAppt.id ? { ...a, ...form } : a);
-      db.saveAppointments(updated);
-      setAppointments(updated);
+      const { error } = await supabase.from("appointments").update(payload).eq("id", editingAppt.id);
+      if (error) { toast.error("Erro ao atualizar"); console.error(error); return; }
       toast.success("Agendamento atualizado!");
     } else {
-      const appt: Appointment = { ...form, id: generateId(), status: "agendado" };
-      const updated = [...appointments, appt];
-      db.saveAppointments(updated);
-      setAppointments(updated);
+      const { error } = await supabase.from("appointments").insert({ ...payload, status: "pending" });
+      if (error) { toast.error("Erro ao criar"); console.error(error); return; }
       toast.success("Agendamento criado!");
     }
 
     setOpen(false);
     resetForm();
+    loadData();
   };
 
-  const openEditAppt = (a: Appointment) => {
+  const openEditAppt = (a: AppointmentRow) => {
     setEditingAppt(a);
     setForm({
-      clientId: a.clientId, clientName: a.clientName, date: a.date, time: a.time,
-      serviceType: a.serviceType, observations: a.observations,
-      technicianId: a.technicianId || "", technicianName: a.technicianName || "",
+      clientId: a.client_id, clientName: a.client_name, date: a.date, time: a.time,
+      serviceType: a.service || "", observations: a.notes || "",
+      technicianId: a.collaborator_id || "", technicianName: a.collaborator_name || "",
     });
     setOpen(true);
   };
 
-  const toggleStatus = (id: string) => {
-    const updated = appointments.map(a =>
-      a.id === id ? { ...a, status: (a.status === "agendado" ? "concluido" : "agendado") as Appointment["status"] } : a
-    );
-    db.saveAppointments(updated);
-    setAppointments(updated);
+  const toggleStatus = async (id: string) => {
+    const appt = appointments.find(a => a.id === id);
+    if (!appt) return;
+    const newStatus = appt.status === "pending" ? "completed" : "pending";
+    const { error } = await supabase.from("appointments").update({ status: newStatus }).eq("id", id);
+    if (error) { toast.error("Erro ao atualizar status"); return; }
+    loadData();
   };
 
-  const remove = (id: string) => {
-    const updated = appointments.filter(a => a.id !== id);
-    db.saveAppointments(updated);
-    setAppointments(updated);
+  const remove = async (id: string) => {
+    const { error } = await supabase.from("appointments").delete().eq("id", id);
+    if (error) { toast.error("Erro ao remover"); return; }
     toast.success("Agendamento removido");
+    loadData();
   };
 
   const openRoute = (clientId: string) => {
@@ -96,7 +166,6 @@ export default function AgendaPage() {
     }
   };
 
-  // Edit client inline
   const openEditClient = (clientId: string) => {
     const cl = clients.find(c => c.id === clientId);
     if (cl) {
@@ -105,18 +174,31 @@ export default function AgendaPage() {
     }
   };
 
-  const saveClientEdit = () => {
+  const saveClientEdit = async () => {
     if (!editClientData) return;
     const fullAddr = [editClientData.street, editClientData.number, editClientData.complement, editClientData.neighborhood, editClientData.city, editClientData.state].filter(Boolean).join(", ");
-    const updated = clients.map(c => c.id === editClientData.id ? { ...editClientData, address: fullAddr } : c);
-    db.saveClients(updated);
-    setClients(updated);
+    
+    const { error: clientError } = await supabase.from("clients").update({
+      name: editClientData.name,
+      phone: editClientData.phone,
+      street: editClientData.street,
+      number: editClientData.number,
+      complement: editClientData.complement,
+      neighborhood: editClientData.neighborhood,
+      city: editClientData.city,
+      state: editClientData.state,
+      observations: editClientData.observations,
+      address: fullAddr,
+    }).eq("id", editClientData.id);
+
+    if (clientError) { toast.error("Erro ao salvar cliente"); return; }
+
     // Update appointment client names
-    const updatedAppts = appointments.map(a => a.clientId === editClientData.id ? { ...a, clientName: editClientData.name } : a);
-    db.saveAppointments(updatedAppts);
-    setAppointments(updatedAppts);
+    await supabase.from("appointments").update({ client_name: editClientData.name }).eq("client_id", editClientData.id).eq("company_id", editClientData.company_id);
+
     setEditClientOpen(false);
     toast.success("Cliente atualizado!");
+    loadData();
   };
 
   const busyTimesForDate = form.date ? getBusyTimes(form.date, editingAppt?.id) : [];
@@ -156,7 +238,6 @@ export default function AgendaPage() {
                 <div><Label>Horário</Label><Input type="time" value={form.time} onChange={e => setForm({...form, time: e.target.value})} /></div>
               </div>
 
-              {/* Busy times indicator */}
               {form.date && busyTimesForDate.length > 0 && (
                 <div className="rounded-lg bg-warning/10 border border-warning/20 p-2.5 text-xs">
                   <p className="font-medium text-warning mb-1">⚠️ Horários ocupados neste dia:</p>
@@ -192,7 +273,9 @@ export default function AgendaPage() {
         </Dialog>
       }
     >
-      {sorted.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-12 text-muted-foreground">Carregando...</div>
+      ) : sorted.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Clock className="mx-auto h-12 w-12 mb-2 opacity-40" />
           <p>Nenhum agendamento</p>
@@ -200,19 +283,19 @@ export default function AgendaPage() {
       ) : (
         <div className="space-y-3">
           {sorted.map(a => (
-            <div key={a.id} className={`rounded-xl bg-card p-4 shadow-card animate-fade-in border-l-4 ${a.status === "concluido" ? "border-l-success" : "border-l-primary"}`}>
+            <div key={a.id} className={`rounded-xl bg-card p-4 shadow-card animate-fade-in border-l-4 ${a.status === "completed" ? "border-l-success" : "border-l-primary"}`}>
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="font-semibold text-foreground">{a.clientName}</h3>
+                  <h3 className="font-semibold text-foreground">{a.client_name}</h3>
                   <p className="text-sm text-muted-foreground">{new Date(a.date + "T00:00").toLocaleDateString("pt-BR")} {a.time && `às ${a.time}`}</p>
-                  {a.serviceType && <span className="mt-1 inline-block rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{a.serviceType}</span>}
-                  {a.technicianName && <p className="text-xs text-muted-foreground mt-1">👷 {a.technicianName}</p>}
+                  {a.service && <span className="mt-1 inline-block rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">{a.service}</span>}
+                  {a.collaborator_name && <p className="text-xs text-muted-foreground mt-1">👷 {a.collaborator_name}</p>}
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => openEditAppt(a)} className="rounded-lg p-2 text-muted-foreground hover:bg-accent">
                     <Edit className="h-4 w-4" />
                   </button>
-                  <button onClick={() => toggleStatus(a.id)} className={`rounded-lg p-2 ${a.status === "concluido" ? "text-success" : "text-muted-foreground"} hover:bg-accent`}>
+                  <button onClick={() => toggleStatus(a.id)} className={`rounded-lg p-2 ${a.status === "completed" ? "text-success" : "text-muted-foreground"} hover:bg-accent`}>
                     <Check className="h-4 w-4" />
                   </button>
                   <button onClick={() => remove(a.id)} className="rounded-lg p-2 text-destructive hover:bg-destructive/10"><Trash2 className="h-4 w-4" /></button>
@@ -220,16 +303,16 @@ export default function AgendaPage() {
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button size="sm" className="rounded-full gap-1 text-xs" onClick={() => navigate(`/execucao?appt=${a.id}`)}>
-                  <Play className="h-3.5 w-3.5" /> {a.status === "concluido" ? "Ver Execução" : "Iniciar Serviço"}
+                  <Play className="h-3.5 w-3.5" /> {a.status === "completed" ? "Ver Execução" : "Iniciar Serviço"}
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openRoute(a.clientId)}><MapPin className="h-3.5 w-3.5" /> Rota</Button>
-                {a.clientId && (
-                  <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openEditClient(a.clientId)}>
+                <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openRoute(a.client_id)}><MapPin className="h-3.5 w-3.5" /> Rota</Button>
+                {a.client_id && a.client_id !== "manual" && (
+                  <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openEditClient(a.client_id)}>
                     <User className="h-3.5 w-3.5" /> Editar Cliente
                   </Button>
                 )}
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${a.status === "concluido" ? "bg-success/10 text-success" : "bg-primary/10 text-primary"}`}>
-                  {a.status === "concluido" ? "Concluído" : "Agendado"}
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${a.status === "completed" ? "bg-success/10 text-success" : "bg-primary/10 text-primary"}`}>
+                  {a.status === "completed" ? "Concluído" : "Agendado"}
                 </span>
               </div>
             </div>
@@ -244,7 +327,7 @@ export default function AgendaPage() {
           {editClientData && (
             <div className="space-y-3">
               <div><Label>Nome</Label><Input value={editClientData.name} onChange={e => setEditClientData({...editClientData, name: e.target.value})} /></div>
-              <div><Label>Telefone</Label><Input value={editClientData.phone} onChange={e => setEditClientData({...editClientData, phone: e.target.value})} /></div>
+              <div><Label>Telefone</Label><Input value={editClientData.phone || ""} onChange={e => setEditClientData({...editClientData, phone: e.target.value})} /></div>
               <div className="rounded-lg border p-3 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">📍 Endereço</p>
                 <div><Label className="text-xs">Rua</Label><Input value={editClientData.street || ''} onChange={e => setEditClientData({...editClientData, street: e.target.value})} /></div>
@@ -266,7 +349,7 @@ export default function AgendaPage() {
                   </div>
                 </div>
               </div>
-              <div><Label>Observações</Label><Textarea value={editClientData.observations} onChange={e => setEditClientData({...editClientData, observations: e.target.value})} /></div>
+              <div><Label>Observações</Label><Textarea value={editClientData.observations || ""} onChange={e => setEditClientData({...editClientData, observations: e.target.value})} /></div>
               <Button onClick={saveClientEdit} className="w-full rounded-full">Salvar Cliente</Button>
             </div>
           )}
