@@ -204,62 +204,101 @@ export type Database = {
         Row: {
           access_code: string
           address: string | null
+          bank_data: Json | null
           city: string | null
           cnpj: string | null
+          company_description: string | null
           created_at: string
+          custom_theme: Json | null
+          differentials: string | null
           email: string | null
+          execution_method: string | null
+          facebook: string | null
           id: string
+          instagram: string | null
           logo_url: string | null
           name: string
           neighborhood: string | null
           phone: string | null
+          pix_keys: Json | null
           plan_tier: Database["public"]["Enums"]["plan_tier"]
+          proposal_text: string | null
+          selected_theme_id: string | null
+          service_guarantee: string | null
           signature_url: string | null
           state: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          technical_recommendation: string | null
           trial_ends_at: string | null
           updated_at: string
+          website: string | null
         }
         Insert: {
           access_code?: string
           address?: string | null
+          bank_data?: Json | null
           city?: string | null
           cnpj?: string | null
+          company_description?: string | null
           created_at?: string
+          custom_theme?: Json | null
+          differentials?: string | null
           email?: string | null
+          execution_method?: string | null
+          facebook?: string | null
           id?: string
+          instagram?: string | null
           logo_url?: string | null
           name: string
           neighborhood?: string | null
           phone?: string | null
+          pix_keys?: Json | null
           plan_tier?: Database["public"]["Enums"]["plan_tier"]
+          proposal_text?: string | null
+          selected_theme_id?: string | null
+          service_guarantee?: string | null
           signature_url?: string | null
           state?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          technical_recommendation?: string | null
           trial_ends_at?: string | null
           updated_at?: string
+          website?: string | null
         }
         Update: {
           access_code?: string
           address?: string | null
+          bank_data?: Json | null
           city?: string | null
           cnpj?: string | null
+          company_description?: string | null
           created_at?: string
+          custom_theme?: Json | null
+          differentials?: string | null
           email?: string | null
+          execution_method?: string | null
+          facebook?: string | null
           id?: string
+          instagram?: string | null
           logo_url?: string | null
           name?: string
           neighborhood?: string | null
           phone?: string | null
+          pix_keys?: Json | null
           plan_tier?: Database["public"]["Enums"]["plan_tier"]
+          proposal_text?: string | null
+          selected_theme_id?: string | null
+          service_guarantee?: string | null
           signature_url?: string | null
           state?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          technical_recommendation?: string | null
           trial_ends_at?: string | null
           updated_at?: string
+          website?: string | null
         }
         Relationships: []
       }
