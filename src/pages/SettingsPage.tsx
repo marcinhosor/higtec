@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,6 +30,8 @@ export default function SettingsPage() {
   const { planTier: dbPlanTier, isPro: dbIsPro, isTrialActive, trialDaysRemaining } = useCompanyPlan();
   const { setTheme, setCustomTheme, refresh: refreshTheme } = useTheme();
   const { user } = useAuth();
+
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [company, setCompany] = useState<CompanyInfo>(() => {
     const c = db.getCompany();
     return {
@@ -40,25 +42,18 @@ export default function SettingsPage() {
       selectedThemeId: c.selectedThemeId || 'default',
     };
   });
+  const [loading, setLoading] = useState(true);
 
-  // Sync local company state with database plan tier
-  useEffect(() => {
-    if (!dbIsPro && !isTrialActive) return;
-    setCompany(prev => ({
-      ...prev,
-      isPro: dbIsPro,
-      planTier: dbPlanTier,
-    }));
-  }, [dbIsPro, dbPlanTier, isTrialActive]);
-
-  const [collaborators, setCollaborators] = useState<Collaborator[]>(() => db.getCollaborators());
+  // Collaborators from cloud
+  const [collaborators, setCollaborators] = useState<any[]>([]);
   const [collabOpen, setCollabOpen] = useState(false);
-  const [editingCollab, setEditingCollab] = useState<Collaborator | null>(null);
-  const [collabForm, setCollabForm] = useState({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
+  const [editingCollab, setEditingCollab] = useState<any | null>(null);
+  const [collabForm, setCollabForm] = useState({ name: "", role: "", phone: "" });
 
-  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(() => db.getServiceTypes());
-  const [editingST, setEditingST] = useState<ServiceType | null>(null);
-  const [stForm, setStForm] = useState({ name: "", defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0 });
+  // Service types from cloud
+  const [serviceTypes, setServiceTypes] = useState<any[]>([]);
+  const [editingST, setEditingST] = useState<any | null>(null);
+  const [stForm, setStForm] = useState({ name: "", defaultPrice: 0, estimatedMinutes: 60 });
 
   // Technician management state
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -68,33 +63,237 @@ export default function SettingsPage() {
   const [accessCode, setAccessCode] = useState("");
   const [loadingTechs, setLoadingTechs] = useState(false);
 
-  // Load technicians and access code from database
+  // Load company data from cloud
+  const loadCloudData = useCallback(async (cId: string) => {
+    // Load company
+    const { data: companyData } = await supabase.from("companies").select("*").eq("id", cId).single();
+    if (companyData) {
+      const bankData = (companyData as any).bank_data || { bankName: '', agency: '', account: '', accountType: 'corrente', holderName: '', holderDocument: '' };
+      const pixKeys = (companyData as any).pix_keys || [];
+      const customTheme = (companyData as any).custom_theme || null;
+      setCompany(prev => ({
+        ...prev,
+        name: companyData.name || '',
+        phone: companyData.phone || '',
+        cnpj: companyData.cnpj || '',
+        address: companyData.address || '',
+        logo: companyData.logo_url || '',
+        signature: companyData.signature_url || '',
+        instagram: (companyData as any).instagram || '',
+        companyDescription: (companyData as any).company_description || '',
+        differentials: (companyData as any).differentials || '',
+        serviceGuarantee: (companyData as any).service_guarantee || '',
+        executionMethod: (companyData as any).execution_method || '',
+        technicalRecommendation: (companyData as any).technical_recommendation || '',
+        selectedThemeId: (companyData as any).selected_theme_id || 'default',
+        customTheme: customTheme,
+        bankData: bankData,
+        pixKeys: pixKeys,
+        isPro: dbIsPro,
+        planTier: dbPlanTier,
+      }));
+      setAccessCode(companyData.access_code || '');
+    }
+
+    // Load collaborators
+    const { data: collabs } = await supabase.from("collaborators").select("*").eq("company_id", cId).order("created_at");
+    if (collabs) setCollaborators(collabs);
+
+    // Load service types
+    const { data: sts } = await supabase.from("service_types").select("*").eq("company_id", cId).order("sort_order");
+    if (sts) setServiceTypes(sts);
+
+    // Load technicians
+    const { data: techs } = await supabase.from("technicians").select("*").eq("company_id", cId).order("created_at");
+    if (techs) setTechnicians(techs);
+
+    setLoading(false);
+  }, [dbIsPro, dbPlanTier]);
+
   useEffect(() => {
     if (!user) return;
-    const loadTechnicians = async () => {
-      setLoadingTechs(true);
-      // Get company_id from profile
+    const init = async () => {
       const { data: profile } = await supabase.from("profiles").select("company_id").eq("user_id", user.id).single();
-      if (!profile?.company_id) { setLoadingTechs(false); return; }
-
-      // Get access code
-      const { data: companyData } = await supabase.from("companies").select("access_code").eq("id", profile.company_id).single();
-      if (companyData) setAccessCode(companyData.access_code);
-
-      // Get technicians
-      const { data: techs } = await supabase.from("technicians").select("*").eq("company_id", profile.company_id).order("created_at");
-      if (techs) setTechnicians(techs);
-      setLoadingTechs(false);
+      if (!profile?.company_id) { setLoading(false); return; }
+      setCompanyId(profile.company_id);
+      await loadCloudData(profile.company_id);
     };
-    loadTechnicians();
-  }, [user]);
+    init();
+  }, [user, loadCloudData]);
 
+  // Sync plan tier
+  useEffect(() => {
+    if (!dbIsPro && !isTrialActive) return;
+    setCompany(prev => ({ ...prev, isPro: dbIsPro, planTier: dbPlanTier }));
+  }, [dbIsPro, dbPlanTier, isTrialActive]);
+
+  // ---- Save Company to Cloud ----
+  const saveCompany = async () => {
+    if (!companyId) { toast.error("Empresa não encontrada"); return; }
+    const { error } = await supabase.from("companies").update({
+      name: company.name,
+      phone: company.phone || null,
+      cnpj: company.cnpj || null,
+      address: company.address || null,
+      logo_url: company.logo || null,
+      signature_url: company.signature || null,
+      instagram: company.instagram || '',
+      company_description: company.companyDescription || '',
+      differentials: company.differentials || '',
+      service_guarantee: company.serviceGuarantee || '',
+      execution_method: company.executionMethod || '',
+      technical_recommendation: company.technicalRecommendation || '',
+      selected_theme_id: company.selectedThemeId || 'default',
+      custom_theme: company.customTheme || null,
+      bank_data: company.bankData || null,
+      pix_keys: company.pixKeys || [],
+    } as any).eq("id", companyId);
+    if (error) { toast.error("Erro ao salvar: " + error.message); return; }
+    // Also save locally for theme/PDF compatibility
+    db.saveCompany(company);
+    refreshTheme();
+    toast.success("Dados salvos na nuvem!");
+  };
+
+  const handleThemeSelect = (themeId: string) => {
+    setCompany(prev => ({ ...prev, selectedThemeId: themeId }));
+    setTheme(themeId);
+    // Save theme to cloud immediately
+    if (companyId) {
+      supabase.from("companies").update({ selected_theme_id: themeId, custom_theme: null } as any).eq("id", companyId).then();
+    }
+    toast.success("Paleta aplicada com sucesso!");
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { setCompany({ ...company, logo: reader.result as string }); };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { setCompany({ ...company, signature: reader.result as string }); };
+    reader.readAsDataURL(file);
+  };
+
+  // ---- PIX Keys (in-memory, saved with company) ----
+  const addPixKey = () => {
+    const newKey: PixKey = { id: generateId(), type: 'cpf', value: '', isPrimary: company.pixKeys.length === 0 };
+    setCompany({ ...company, pixKeys: [...company.pixKeys, newKey] });
+  };
+  const updatePixKey = (id: string, updates: Partial<PixKey>) => {
+    setCompany({ ...company, pixKeys: company.pixKeys.map(k => k.id === id ? { ...k, ...updates } : k) });
+  };
+  const removePixKey = (id: string) => {
+    const filtered = company.pixKeys.filter(k => k.id !== id);
+    if (filtered.length > 0 && !filtered.some(k => k.isPrimary)) filtered[0].isPrimary = true;
+    setCompany({ ...company, pixKeys: filtered });
+  };
+  const setPrimaryPix = (id: string) => {
+    setCompany({ ...company, pixKeys: company.pixKeys.map(k => ({ ...k, isPrimary: k.id === id })) });
+  };
+
+  // ---- Collaborators (Cloud) ----
+  const saveCollaborator = async () => {
+    if (!collabForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    if (!companyId) return;
+    if (editingCollab) {
+      const { error } = await supabase.from("collaborators").update({
+        name: collabForm.name, role: collabForm.role || null, phone: collabForm.phone || null,
+      }).eq("id", editingCollab.id);
+      if (error) { toast.error("Erro ao atualizar"); return; }
+      setCollaborators(prev => prev.map(c => c.id === editingCollab.id ? { ...c, ...collabForm } : c));
+      toast.success("Colaborador atualizado!");
+    } else {
+      const { data, error } = await supabase.from("collaborators").insert({
+        company_id: companyId, name: collabForm.name, role: collabForm.role || null, phone: collabForm.phone || null,
+      }).select().single();
+      if (error) { toast.error("Erro ao cadastrar"); return; }
+      setCollaborators(prev => [...prev, data]);
+      toast.success("Colaborador cadastrado!");
+    }
+    setCollabOpen(false);
+    setEditingCollab(null);
+    setCollabForm({ name: "", role: "", phone: "" });
+  };
+
+  const toggleCollabStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'ativo' ? 'inativo' : 'ativo';
+    await supabase.from("collaborators").update({ status: newStatus }).eq("id", id);
+    setCollaborators(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
+  };
+
+  const removeCollaborator = async (id: string) => {
+    await supabase.from("collaborators").delete().eq("id", id);
+    setCollaborators(prev => prev.filter(c => c.id !== id));
+    toast.success("Colaborador removido");
+  };
+
+  // ---- Service Types (Cloud) ----
+  const saveServiceType = async () => {
+    if (!stForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
+    if (!companyId) return;
+    if (editingST) {
+      const { error } = await supabase.from("service_types").update({
+        name: stForm.name, default_price: stForm.defaultPrice, estimated_minutes: stForm.estimatedMinutes,
+      }).eq("id", editingST.id);
+      if (error) { toast.error("Erro ao atualizar"); return; }
+      setServiceTypes(prev => prev.map(st => st.id === editingST.id ? { ...st, name: stForm.name, default_price: stForm.defaultPrice, estimated_minutes: stForm.estimatedMinutes } : st));
+      setEditingST(null);
+      toast.success("Serviço atualizado!");
+    } else {
+      const { data, error } = await supabase.from("service_types").insert({
+        company_id: companyId, name: stForm.name, default_price: stForm.defaultPrice, estimated_minutes: stForm.estimatedMinutes, sort_order: serviceTypes.length,
+      }).select().single();
+      if (error) { toast.error("Erro ao cadastrar"); return; }
+      setServiceTypes(prev => [...prev, data]);
+      toast.success("Serviço adicionado!");
+    }
+    setStForm({ name: "", defaultPrice: 0, estimatedMinutes: 60 });
+  };
+
+  const removeServiceType = async (id: string) => {
+    await supabase.from("service_types").delete().eq("id", id);
+    setServiceTypes(prev => prev.filter(s => s.id !== id));
+    toast.success("Serviço removido");
+  };
+
+  const toggleServiceType = async (id: string, currentActive: boolean) => {
+    await supabase.from("service_types").update({ is_active: !currentActive }).eq("id", id);
+    setServiceTypes(prev => prev.map(s => s.id === id ? { ...s, is_active: !currentActive } : s));
+  };
+
+  const moveServiceType = async (id: string, dir: -1 | 1) => {
+    const idx = serviceTypes.findIndex(s => s.id === id);
+    if (idx === -1) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= serviceTypes.length) return;
+    const arr = [...serviceTypes];
+    [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+    arr.forEach((s, i) => s.sort_order = i);
+    setServiceTypes(arr);
+    // Update both in DB
+    await Promise.all([
+      supabase.from("service_types").update({ sort_order: arr[idx].sort_order }).eq("id", arr[idx].id),
+      supabase.from("service_types").update({ sort_order: arr[newIdx].sort_order }).eq("id", arr[newIdx].id),
+    ]);
+  };
+
+  const startEditST = (st: any) => {
+    setEditingST(st);
+    setStForm({ name: st.name, defaultPrice: st.default_price || 0, estimatedMinutes: st.estimated_minutes || 60 });
+  };
+
+  // ---- Technicians (already cloud) ----
   const saveTechnician = async () => {
     if (!techForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
     if (techForm.pin.length !== 4) { toast.error("PIN deve ter 4 dígitos"); return; }
-    
-    const { data: profile } = await supabase.from("profiles").select("company_id").eq("user_id", user!.id).single();
-    if (!profile?.company_id) { toast.error("Empresa não encontrada"); return; }
+    if (!companyId) { toast.error("Empresa não encontrada"); return; }
 
     if (editingTech) {
       const { error } = await supabase.from("technicians").update({
@@ -105,7 +304,7 @@ export default function SettingsPage() {
       toast.success("Técnico atualizado!");
     } else {
       const { data, error } = await supabase.from("technicians").insert({
-        company_id: profile.company_id, name: techForm.name, email: techForm.email || null, phone: techForm.phone || null, pin: techForm.pin,
+        company_id: companyId, name: techForm.name, email: techForm.email || null, phone: techForm.phone || null, pin: techForm.pin,
       }).select().single();
       if (error) {
         toast.error(error.message.includes("unique") ? "Já existe um técnico com esse nome" : "Erro ao cadastrar técnico");
@@ -138,154 +337,6 @@ export default function SettingsPage() {
     toast.success("Código copiado!");
   };
 
-  const saveCompany = () => {
-    db.saveCompany(company);
-    refreshTheme();
-    toast.success("Dados salvos!");
-  };
-
-  const handleThemeSelect = (themeId: string) => {
-    setCompany(prev => ({ ...prev, selectedThemeId: themeId }));
-    setTheme(themeId);
-    toast.success("Paleta aplicada com sucesso!");
-  };
-
-
-
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { setCompany({ ...company, logo: reader.result as string }); };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { setCompany({ ...company, signature: reader.result as string }); };
-    reader.readAsDataURL(file);
-  };
-
-  const handleCollabSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { setCollabForm({ ...collabForm, signature: reader.result as string }); };
-    reader.readAsDataURL(file);
-  };
-
-  const addPixKey = () => {
-    const newKey: PixKey = { id: generateId(), type: 'cpf', value: '', isPrimary: company.pixKeys.length === 0 };
-    setCompany({ ...company, pixKeys: [...company.pixKeys, newKey] });
-  };
-
-  const updatePixKey = (id: string, updates: Partial<PixKey>) => {
-    setCompany({ ...company, pixKeys: company.pixKeys.map(k => k.id === id ? { ...k, ...updates } : k) });
-  };
-
-  const removePixKey = (id: string) => {
-    const filtered = company.pixKeys.filter(k => k.id !== id);
-    if (filtered.length > 0 && !filtered.some(k => k.isPrimary)) filtered[0].isPrimary = true;
-    setCompany({ ...company, pixKeys: filtered });
-  };
-
-  const setPrimaryPix = (id: string) => {
-    setCompany({ ...company, pixKeys: company.pixKeys.map(k => ({ ...k, isPrimary: k.id === id })) });
-  };
-
-  const saveCollaborator = () => {
-    if (!collabForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
-    if (editingCollab) {
-      const updated = collaborators.map(c => c.id === editingCollab.id ? {
-        ...c, name: collabForm.name, role: collabForm.role, phone: collabForm.phone,
-        cpf: collabForm.cpf, admissionDate: collabForm.admissionDate, signature: collabForm.signature,
-      } : c);
-      db.saveCollaborators(updated);
-      setCollaborators(updated);
-      setCollabOpen(false);
-      setEditingCollab(null);
-      setCollabForm({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
-      toast.success("Colaborador atualizado!");
-      return;
-    }
-    const collab: Collaborator = {
-      id: generateId(), name: collabForm.name, role: collabForm.role, phone: collabForm.phone,
-      cpf: collabForm.cpf, admissionDate: collabForm.admissionDate, status: 'ativo',
-      signature: collabForm.signature, createdAt: new Date().toISOString(),
-    };
-    const updated = [...collaborators, collab];
-    db.saveCollaborators(updated);
-    setCollaborators(updated);
-    setCollabOpen(false);
-    setCollabForm({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" });
-    toast.success("Colaborador cadastrado!");
-  };
-
-  const toggleCollabStatus = (id: string) => {
-    const updated = collaborators.map(c => c.id === id ? { ...c, status: (c.status === 'ativo' ? 'inativo' : 'ativo') as Collaborator['status'] } : c);
-    db.saveCollaborators(updated);
-    setCollaborators(updated);
-  };
-
-  const removeCollaborator = (id: string) => {
-    const updated = collaborators.filter(c => c.id !== id);
-    db.saveCollaborators(updated);
-    setCollaborators(updated);
-    toast.success("Colaborador removido");
-  };
-
-  // Service Types management
-  const saveServiceType = () => {
-    if (!stForm.name.trim()) { toast.error("Nome é obrigatório"); return; }
-    if (editingST) {
-      const updated = serviceTypes.map(st => st.id === editingST.id ? { ...st, ...stForm } : st);
-      db.saveServiceTypes(updated);
-      setServiceTypes(updated);
-      setEditingST(null);
-      toast.success("Serviço atualizado!");
-    } else {
-      const newST: ServiceType = {
-        id: generateId(), name: stForm.name, defaultPrice: stForm.defaultPrice,
-        avgExecutionMinutes: stForm.avgExecutionMinutes, avgMarginPercent: stForm.avgMarginPercent,
-        isCustom: true, isActive: true, order: serviceTypes.length, createdAt: new Date().toISOString(),
-      };
-      const updated = [...serviceTypes, newST];
-      db.saveServiceTypes(updated);
-      setServiceTypes(updated);
-      toast.success("Serviço adicionado!");
-    }
-    setStForm({ name: "", defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0 });
-  };
-
-  const removeServiceType = (id: string) => {
-    const st = serviceTypes.find(s => s.id === id);
-    if (st && !st.isCustom) { toast.error("Tipos padrão não podem ser removidos"); return; }
-    const updated = serviceTypes.filter(s => s.id !== id);
-    db.saveServiceTypes(updated);
-    setServiceTypes(updated);
-    toast.success("Serviço removido");
-  };
-
-  const moveServiceType = (id: string, dir: -1 | 1) => {
-    const idx = serviceTypes.findIndex(s => s.id === id);
-    if (idx === -1) return;
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= serviceTypes.length) return;
-    const arr = [...serviceTypes];
-    [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
-    arr.forEach((s, i) => s.order = i);
-    db.saveServiceTypes(arr);
-    setServiceTypes(arr);
-  };
-
-  const startEditST = (st: ServiceType) => {
-    setEditingST(st);
-    setStForm({ name: st.name, defaultPrice: st.defaultPrice, avgExecutionMinutes: st.avgExecutionMinutes, avgMarginPercent: st.avgMarginPercent });
-  };
-
   const exportBackup = () => {
     const data = db.exportAll();
     const blob = new Blob([data], { type: "application/json" });
@@ -307,8 +358,6 @@ export default function SettingsPage() {
         try {
           db.importAll(reader.result as string);
           setCompany(db.getCompany());
-          setCollaborators(db.getCollaborators());
-          setServiceTypes(db.getServiceTypes());
           toast.success("Backup restaurado com sucesso!");
         } catch { toast.error("Arquivo de backup inválido"); }
       };
@@ -316,6 +365,16 @@ export default function SettingsPage() {
     };
     input.click();
   };
+
+  if (loading) {
+    return (
+      <PageShell title="Configurações" showBack>
+        <div className="flex items-center justify-center py-20">
+          <p className="text-muted-foreground">Carregando configurações...</p>
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell title="Configurações" showBack>
@@ -367,6 +426,9 @@ export default function SettingsPage() {
             onCustomTheme={(ct) => {
               setCustomTheme(ct);
               setCompany(prev => ({ ...prev, selectedThemeId: 'custom', customTheme: ct }));
+              if (companyId) {
+                supabase.from("companies").update({ selected_theme_id: 'custom', custom_theme: ct } as any).eq("id", companyId).then();
+              }
               toast.success("Personalização aplicada!");
             }}
           />
@@ -424,7 +486,7 @@ export default function SettingsPage() {
               </div>
               <h2 className="font-semibold text-foreground">Colaboradores</h2>
             </div>
-            <Dialog open={collabOpen} onOpenChange={o => { setCollabOpen(o); if (!o) { setEditingCollab(null); setCollabForm({ name: "", role: "", phone: "", cpf: "", admissionDate: "", signature: "" }); } }}>
+            <Dialog open={collabOpen} onOpenChange={o => { setCollabOpen(o); if (!o) { setEditingCollab(null); setCollabForm({ name: "", role: "", phone: "" }); } }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
               </DialogTrigger>
@@ -434,20 +496,6 @@ export default function SettingsPage() {
                   <div><Label>Nome Completo *</Label><Input value={collabForm.name} onChange={e => setCollabForm({...collabForm, name: e.target.value})} /></div>
                   <div><Label>Cargo</Label><Input value={collabForm.role} onChange={e => setCollabForm({...collabForm, role: e.target.value})} placeholder="Técnico, Auxiliar..." /></div>
                   <div><Label>Telefone</Label><Input value={collabForm.phone} onChange={e => setCollabForm({...collabForm, phone: e.target.value})} /></div>
-                  <div><Label>CPF (opcional)</Label><Input value={collabForm.cpf} onChange={e => setCollabForm({...collabForm, cpf: e.target.value})} /></div>
-                  <div><Label>Data de Admissão</Label><Input type="date" value={collabForm.admissionDate} onChange={e => setCollabForm({...collabForm, admissionDate: e.target.value})} /></div>
-                  {company.isPro && (
-                    <div>
-                      <Label>Assinatura Digital (imagem)</Label>
-                      <div className="flex items-center gap-3 mt-1">
-                        {collabForm.signature && <img src={collabForm.signature} alt="Assinatura" className="h-10 rounded-lg object-contain border" />}
-                        <label className="flex items-center gap-2 cursor-pointer rounded-full border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent">
-                          <ImagePlus className="h-4 w-4" /> {collabForm.signature ? "Trocar" : "Upload"}
-                          <input type="file" accept="image/*" className="hidden" onChange={handleCollabSignatureUpload} />
-                        </label>
-                      </div>
-                    </div>
-                  )}
                   <Button onClick={saveCollaborator} className="w-full rounded-full">Salvar</Button>
                 </div>
               </DialogContent>
@@ -459,20 +507,20 @@ export default function SettingsPage() {
           ) : (
             <div className="space-y-2">
               {collaborators.map(c => (
-              <div key={c.id} className={`rounded-lg border p-3 flex items-center justify-between ${c.status === 'inativo' ? 'opacity-50' : ''}`}>
+                <div key={c.id} className={`rounded-lg border p-3 flex items-center justify-between ${c.status === 'inativo' ? 'opacity-50' : ''}`}>
                   <div>
                     <p className="font-medium text-foreground text-sm">{c.name}</p>
                     <p className="text-xs text-muted-foreground">{c.role || "Sem cargo"} {c.phone && `• ${c.phone}`} • {c.status === 'ativo' ? '✅ Ativo' : '⛔ Inativo'}</p>
                   </div>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
-                      setCollabForm({ name: c.name, role: c.role, phone: c.phone, cpf: c.cpf, admissionDate: c.admissionDate, signature: c.signature });
+                      setCollabForm({ name: c.name, role: c.role || '', phone: c.phone || '' });
                       setEditingCollab(c);
                       setCollabOpen(true);
                     }}>
                       <Pencil className="h-4 w-4 text-muted-foreground" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleCollabStatus(c.id)} title={c.status === 'ativo' ? 'Desativar' : 'Ativar'}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleCollabStatus(c.id, c.status)} title={c.status === 'ativo' ? 'Desativar' : 'Ativar'}>
                       {c.status === 'ativo' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeCollaborator(c.id)}>
@@ -570,38 +618,33 @@ export default function SettingsPage() {
 
           {/* Add/Edit form */}
           <div className="space-y-2 mb-4 rounded-lg border p-3">
-            <p className="text-xs font-medium text-muted-foreground">{editingST ? '✏️ Editando serviço' : '➕ Novo serviço'}{!company.isPro && ' (personalização PRO)'}</p>
-            <Input value={stForm.name} onChange={e => setStForm({ ...stForm, name: e.target.value })} placeholder="Nome do serviço" className="h-9" disabled={!company.isPro && !editingST} />
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-xs font-medium text-muted-foreground">{editingST ? '✏️ Editando serviço' : '➕ Novo serviço'}</p>
+            <Input value={stForm.name} onChange={e => setStForm({ ...stForm, name: e.target.value })} placeholder="Nome do serviço" className="h-9" />
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-xs text-muted-foreground">Valor padrão (R$)</span>
                 <Input type="number" min={0} step="0.01" value={stForm.defaultPrice || ""} onChange={e => setStForm({ ...stForm, defaultPrice: parseFloat(e.target.value) || 0 })} className="h-9" />
               </div>
               <div>
                 <span className="text-xs text-muted-foreground">Tempo (min)</span>
-                <Input type="number" min={0} value={stForm.avgExecutionMinutes || ""} onChange={e => setStForm({ ...stForm, avgExecutionMinutes: parseInt(e.target.value) || 0 })} className="h-9" />
-              </div>
-              <div>
-                <span className="text-xs text-muted-foreground">Margem (%){!company.isPro && ' 🔒'}</span>
-                <Input type="number" min={0} max={100} value={stForm.avgMarginPercent || ""} onChange={e => setStForm({ ...stForm, avgMarginPercent: parseFloat(e.target.value) || 0 })} className="h-9" disabled={!company.isPro} />
+                <Input type="number" min={0} value={stForm.estimatedMinutes || ""} onChange={e => setStForm({ ...stForm, estimatedMinutes: parseInt(e.target.value) || 0 })} className="h-9" />
               </div>
             </div>
             <div className="flex gap-2">
               <Button onClick={saveServiceType} size="sm" className="rounded-full flex-1">{editingST ? 'Atualizar' : 'Adicionar'}</Button>
-              {editingST && <Button onClick={() => { setEditingST(null); setStForm({ name: "", defaultPrice: 0, avgExecutionMinutes: 0, avgMarginPercent: 0 }); }} size="sm" variant="outline" className="rounded-full">Cancelar</Button>}
+              {editingST && <Button onClick={() => { setEditingST(null); setStForm({ name: "", defaultPrice: 0, estimatedMinutes: 60 }); }} size="sm" variant="outline" className="rounded-full">Cancelar</Button>}
             </div>
           </div>
 
           {/* List */}
           <div className="space-y-1.5">
-            {serviceTypes.sort((a, b) => a.order - b.order).map(st => (
-              <div key={st.id} className={`flex items-center justify-between rounded-lg border p-2.5 text-sm ${!st.isActive ? 'opacity-50' : ''}`}>
+            {serviceTypes.map(st => (
+              <div key={st.id} className={`flex items-center justify-between rounded-lg border p-2.5 text-sm ${!st.is_active ? 'opacity-50' : ''}`}>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-foreground truncate">{st.name} {!st.isActive && <span className="text-xs text-muted-foreground">(inativo)</span>}</p>
+                  <p className="font-medium text-foreground truncate">{st.name} {!st.is_active && <span className="text-xs text-muted-foreground">(inativo)</span>}</p>
                   <p className="text-xs text-muted-foreground">
-                    {st.defaultPrice > 0 ? `R$ ${st.defaultPrice.toFixed(2)}` : 'Sem valor padrão'}
-                    {st.avgExecutionMinutes > 0 && ` • ${st.avgExecutionMinutes}min`}
-                    {company.isPro && st.avgMarginPercent > 0 && ` • ${st.avgMarginPercent}%`}
+                    {(st.default_price || 0) > 0 ? `R$ ${(st.default_price || 0).toFixed(2)}` : 'Sem valor padrão'}
+                    {(st.estimated_minutes || 0) > 0 && ` • ${st.estimated_minutes}min`}
                   </p>
                 </div>
                 <div className="flex items-center gap-0.5">
@@ -611,17 +654,11 @@ export default function SettingsPage() {
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, 1)}><ArrowDown className="h-3 w-3" /></Button>
                     </>
                   )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                    const updated = serviceTypes.map(s => s.id === st.id ? { ...s, isActive: !s.isActive } : s);
-                    db.saveServiceTypes(updated);
-                    setServiceTypes(updated);
-                  }} title={st.isActive ? 'Desativar' : 'Ativar'}>
-                    {st.isActive ? <UserX className="h-3 w-3 text-warning" /> : <UserCheck className="h-3 w-3 text-success" />}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleServiceType(st.id, st.is_active !== false)} title={st.is_active !== false ? 'Desativar' : 'Ativar'}>
+                    {st.is_active !== false ? <UserX className="h-3 w-3 text-warning" /> : <UserCheck className="h-3 w-3 text-success" />}
                   </Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditST(st)}><Pencil className="h-3 w-3" /></Button>
-                  {company.isPro && st.isCustom && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeServiceType(st.id)}><Trash2 className="h-3 w-3" /></Button>
-                  )}
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeServiceType(st.id)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               </div>
             ))}
@@ -697,9 +734,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {loadingTechs ? (
-            <p className="text-sm text-muted-foreground text-center py-4">Carregando...</p>
-          ) : technicians.length === 0 ? (
+          {technicians.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">Nenhum técnico cadastrado. Cadastre técnicos para que acessem o app com funcionalidades restritas.</p>
           ) : (
             <div className="space-y-2">
