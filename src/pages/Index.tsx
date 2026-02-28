@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle, Clock, BarChart3, Wrench } from "lucide-react";
+import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle, Clock, BarChart3, Wrench, ShoppingBag } from "lucide-react";
 import { getLowStockProducts, getPendingMaintenanceEquipment, Product, Equipment, db, Client } from "@/lib/storage";
 import { updateLastActive } from "@/lib/analytics";
 import logo from "@/assets/logo_app.png";
@@ -18,6 +18,7 @@ const menuItems = [
   { path: "/equipamentos", icon: Wrench, label: "Equipamentos", desc: "Manutenção (PREMIUM)" },
   { path: "/relatorios", icon: FileText, label: "Relatórios", desc: "Gerar relatórios PDF" },
   { path: "/painel", icon: BarChart3, label: "Painel Estratégico", desc: "Visão executiva (PREMIUM)" },
+  { path: "/marketplace", icon: ShoppingBag, label: "Marketplace", desc: "Lojas parceiras" },
   { path: "/configuracoes", icon: Settings, label: "Configurações", desc: "Dados e backup" },
 ];
 
