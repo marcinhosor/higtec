@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import PageShell from "@/components/PageShell";
 import {
-  db, generateId, Product, deductStock, Collaborator,
-  ServiceExecution, ExecutionPhoto, NonConformity, ExecutionProduct,
+  generateId, ExecutionPhoto, NonConformity, ExecutionProduct,
 } from "@/lib/storage";
 import { generateExecutionReportPDF } from "@/lib/pdf-quote";
 import { Input } from "@/components/ui/input";
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
+import { supabase } from "@/integrations/supabase/client";
 
 const Section = ({ id, icon, title, children, activeSection, setActiveSection }: { id: string; icon: React.ReactNode; title: string; children: React.ReactNode; activeSection: string; setActiveSection: (v: string) => void }) => {
   const isOpen = activeSection === id;
@@ -75,52 +75,77 @@ Tempo de Secagem
 O ${s} estara completamente seco e pronto para uso em aproximadamente 4 a 8 horas, podendo variar conforme ventilacao, temperatura e tipo de tecido.`;
 }
 
+type CloudAppointment = {
+  id: string;
+  client_id: string;
+  client_name: string;
+  date: string;
+  time: string;
+  service: string;
+  notes: string;
+  status: string;
+  collaborator_id: string;
+  collaborator_name: string;
+  company_id: string;
+};
+
+type CloudClient = {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  property_type: string;
+  observations: string;
+  service_history: any;
+};
+
+type CloudCollaborator = {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  status: string;
+};
+
+type CloudProduct = {
+  id: string;
+  name: string;
+  manufacturer: string;
+  type: string;
+  dilution: string;
+  ph: number | null;
+  cost_per_liter: number | null;
+  current_stock_ml: number | null;
+  min_stock_ml: number | null;
+  stock_status: string;
+  consumption_history: any;
+  company_id: string;
+};
+
 export default function ServiceExecutionPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const appointmentId = searchParams.get("appt") || "";
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [appointment, setAppointment] = useState<CloudAppointment | null>(null);
+  const [client, setClient] = useState<CloudClient | null>(null);
+  const [products, setProducts] = useState<CloudProduct[]>([]);
+  const [collaborators, setCollaborators] = useState<CloudCollaborator[]>([]);
   const [selectedTechnician, setSelectedTechnician] = useState("");
-  const { isPro } = useCompanyPlan();
-  const company = useMemo(() => ({ ...db.getCompany(), isPro }), [isPro]);
+  const { isPro, companyId } = useCompanyPlan();
 
-  const appointment = useMemo(() => {
-    return db.getAppointments().find(a => a.id === appointmentId);
-  }, [appointmentId]);
+  // Company info for PDF
+  const [companyInfo, setCompanyInfo] = useState<any>({});
 
-  const client = useMemo(() => {
-    if (!appointment) return null;
-    return db.getClients().find(c => c.id === appointment.clientId) || null;
-  }, [appointment]);
-
-  // Check for existing execution
-  const [execution, setExecution] = useState<ServiceExecution | null>(null);
-
-  useEffect(() => {
-    setProducts(db.getProducts());
-    setCollaborators(db.getCollaborators().filter(c => c.status === 'ativo'));
-    if (appointment?.technicianName) setSelectedTechnician(appointment.technicianName);
-    const existing = db.getExecutions().find(e => e.appointmentId === appointmentId);
-    if (existing) {
-      setExecution(existing);
-      setFiberType(existing.fiberType);
-      setSoilingLevel(existing.soilingLevel);
-      setSoilingType(existing.soilingType);
-      setPhotosBefore(existing.photosBefore);
-      setPhotosAfter(existing.photosAfter);
-      setNonConformities(existing.nonConformities);
-      setUsedProducts(existing.productsUsed);
-      setObservations(existing.observations);
-      setProcessDesc(existing.processDescription);
-      setStartTime(existing.startTime);
-      setEndTime(existing.endTime);
-      if (existing.technicianName) setSelectedTechnician(existing.technicianName);
-    }
-  }, [appointmentId, appointment]);
-
-  // State
+  // Execution state
+  const [executionId, setExecutionId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<string>("before");
   const [fiberType, setFiberType] = useState("");
   const [soilingLevel, setSoilingLevel] = useState("");
@@ -139,12 +164,102 @@ export default function ServiceExecutionPage() {
   const [endTime, setEndTime] = useState("");
   const [isFinalized, setIsFinalized] = useState(false);
 
-  // Auto-fill process description when service type changes
-  useEffect(() => {
-    if (appointment?.serviceType && !processDesc) {
-      setProcessDesc(getDefaultProcess(appointment.serviceType));
+  // Load all data from cloud
+  const loadData = useCallback(async () => {
+    if (!companyId || !appointmentId) {
+      setLoading(false);
+      return;
     }
-  }, [appointment?.serviceType]);
+
+    try {
+      // Load appointment, products, collaborators, company in parallel
+      const [apptRes, prodsRes, collabRes, compRes] = await Promise.all([
+        supabase.from("appointments").select("*").eq("id", appointmentId).eq("company_id", companyId).maybeSingle(),
+        supabase.from("products").select("*").eq("company_id", companyId),
+        supabase.from("collaborators").select("*").eq("company_id", companyId).eq("status", "ativo"),
+        supabase.from("companies").select("*").eq("id", companyId).maybeSingle(),
+      ]);
+
+      if (apptRes.data) {
+        setAppointment(apptRes.data as CloudAppointment);
+        // Load client
+        const { data: clientData } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("id", apptRes.data.client_id)
+          .eq("company_id", companyId)
+          .maybeSingle();
+        if (clientData) setClient(clientData as CloudClient);
+
+        // Set technician from appointment
+        if (apptRes.data.collaborator_name) {
+          setSelectedTechnician(apptRes.data.collaborator_name);
+        }
+      }
+
+      setProducts((prodsRes.data || []) as CloudProduct[]);
+      setCollaborators((collabRes.data || []) as CloudCollaborator[]);
+
+      if (compRes.data) {
+        setCompanyInfo({
+          name: compRes.data.name || '',
+          phone: compRes.data.phone || '',
+          cnpj: compRes.data.cnpj || '',
+          logo: compRes.data.logo_url || '',
+          address: compRes.data.address || '',
+          instagram: compRes.data.instagram || '',
+          signature: compRes.data.signature_url || '',
+          isPro,
+          companyDescription: compRes.data.company_description || '',
+          differentials: compRes.data.differentials || '',
+          serviceGuarantee: compRes.data.service_guarantee || '',
+          executionMethod: compRes.data.execution_method || '',
+          technicalRecommendation: compRes.data.technical_recommendation || '',
+        });
+      }
+
+      // Load existing execution
+      const { data: execData } = await supabase
+        .from("service_executions")
+        .select("*")
+        .eq("appointment_id", appointmentId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+
+      if (execData) {
+        setExecutionId(execData.id);
+        setFiberType(execData.fiber_type || "");
+        setSoilingLevel(execData.soiling_level || "");
+        setSoilingType((execData.soiling_types as any)?.[0] || "");
+        setPhotosBefore((execData.photos_before as any) || []);
+        setPhotosAfter((execData.photos_after as any) || []);
+        setNonConformities((execData.non_conformities as any) || []);
+        setUsedProducts((execData.products_used as any) || []);
+        setObservations(execData.observations || "");
+        setProcessDesc(execData.process_description || "");
+        setStartTime(execData.started_at || "");
+        setEndTime(execData.finished_at || "");
+        if (execData.collaborator_name) setSelectedTechnician(execData.collaborator_name);
+        if (execData.status === "finalizado") setIsFinalized(true);
+      }
+    } catch (err) {
+      console.error("Error loading execution data:", err);
+      toast.error("Erro ao carregar dados");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, appointmentId, isPro]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Auto-fill process description
+  useEffect(() => {
+    if (appointment?.service && !processDesc) {
+      setProcessDesc(getDefaultProcess(appointment.service));
+    }
+  }, [appointment?.service]);
 
   const elapsedMinutes = useMemo(() => {
     if (!startTime) return 0;
@@ -156,13 +271,21 @@ export default function ServiceExecutionPage() {
     let cost = 0;
     usedProducts.forEach(ep => {
       const product = products.find(p => p.id === ep.productId);
-      if (product?.pricePaid != null && product?.volumeLiters != null && product.volumeLiters > 0) {
-        const costPerMl = product.pricePaid / (product.volumeLiters * 1000);
+      if (product?.cost_per_liter != null && product.cost_per_liter > 0) {
+        const costPerMl = product.cost_per_liter / 1000;
         cost += costPerMl * ep.concentratedMl;
       }
     });
     return Math.round(cost * 100) / 100;
   }, [usedProducts, products]);
+
+  if (loading) {
+    return (
+      <PageShell title="Execução" showBack>
+        <div className="text-center py-12 text-muted-foreground">Carregando...</div>
+      </PageShell>
+    );
+  }
 
   if (!appointment) {
     return (
@@ -175,7 +298,7 @@ export default function ServiceExecutionPage() {
     );
   }
 
-  // Compress image to reduce localStorage usage
+  // Compress image
   const compressImage = (dataUrl: string, maxWidth = 800, quality = 0.6): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -192,7 +315,6 @@ export default function ServiceExecutionPage() {
     });
   };
 
-  // Photo capture
   const capturePhoto = (phase: "before" | "after") => {
     const input = document.createElement("input");
     input.type = "file";
@@ -234,7 +356,6 @@ export default function ServiceExecutionPage() {
     setter(prev => prev.map(p => p.id === id ? { ...p, description: desc } : p));
   };
 
-  // Non-conformity
   const addNonConformity = () => {
     if (!ncForm.type) { toast.error("Selecione o tipo de ocorrência"); return; }
     const nc: NonConformity = {
@@ -248,7 +369,6 @@ export default function ServiceExecutionPage() {
     toast.success("Ocorrência registrada");
   };
 
-  // Product / dilution
   const addProduct = () => {
     const product = products.find(p => p.id === prodForm.productId);
     if (!product) { toast.error("Selecione um produto"); return; }
@@ -280,7 +400,6 @@ export default function ServiceExecutionPage() {
 
   const removeProduct = (id: string) => setUsedProducts(prev => prev.filter(p => p.id !== id));
 
-  // Start/stop timer
   const handleStart = () => {
     setStartTime(new Date().toISOString());
     toast.success("Serviço iniciado!");
@@ -291,104 +410,136 @@ export default function ServiceExecutionPage() {
     toast.success("Serviço finalizado!");
   };
 
+  // Save execution to cloud
+  const saveExecution = async (status: "in_progress" | "finalizado") => {
+    if (!companyId) return;
 
-  // Save execution
-  const saveExecution = (status: ServiceExecution["status"]) => {
-    const exec: ServiceExecution = {
-      id: execution?.id || generateId(),
-      appointmentId,
-      clientId: appointment.clientId,
-      clientName: appointment.clientName,
-      serviceType: appointment.serviceType,
-      technicianId: collaborators.find(c => c.name === selectedTechnician)?.id || appointment.technicianId,
-      technicianName: selectedTechnician || appointment.technicianName,
-      fiberType,
-      soilingLevel,
-      soilingType,
-      photosBefore,
-      photosAfter,
-      nonConformities,
-      productsUsed: usedProducts,
+    const techId = collaborators.find(c => c.name === selectedTechnician)?.id || appointment.collaborator_id || "";
+
+    const execPayload = {
+      appointment_id: appointmentId,
+      company_id: companyId,
+      collaborator_id: techId,
+      collaborator_name: selectedTechnician || appointment.collaborator_name || "",
+      fiber_type: fiberType,
+      soiling_level: soilingLevel,
+      soiling_types: [soilingType].filter(Boolean),
+      photos_before: photosBefore as any,
+      photos_after: photosAfter as any,
+      non_conformities: nonConformities as any,
+      products_used: usedProducts as any,
       observations,
-      processDescription: processDesc,
-      startTime,
-      endTime,
-      totalMinutes: elapsedMinutes,
-      totalCost,
+      process_description: processDesc,
+      started_at: startTime,
+      finished_at: endTime,
+      elapsed_seconds: elapsedMinutes * 60,
       status,
-      createdAt: execution?.createdAt || new Date().toISOString(),
     };
 
-    const execs = db.getExecutions().filter(e => e.id !== exec.id);
-    execs.push(exec);
-    const saved = db.saveExecutions(execs);
-    if (!saved) {
-      // Try saving without photos to avoid quota error
-      const execNoPhotos = { ...exec, photosBefore: [], photosAfter: [] };
-      const execs2 = db.getExecutions().filter(e => e.id !== exec.id);
-      execs2.push(execNoPhotos);
-      const retry = db.saveExecutions(execs2);
-      if (!retry) {
-        toast.error("Armazenamento cheio! Exclua execuções antigas em Configurações para liberar espaço.");
+    try {
+      if (executionId) {
+        const { error } = await supabase.from("service_executions").update(execPayload).eq("id", executionId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from("service_executions").insert(execPayload).select("id").single();
+        if (error) throw error;
+        setExecutionId(data.id);
+      }
+
+      // Deduct stock for products not yet deducted
+      if (status === "finalizado" && isPro) {
+        for (const ep of usedProducts) {
+          if (!ep.deducted) {
+            const product = products.find(p => p.id === ep.productId);
+            if (product && product.current_stock_ml != null) {
+              const newStock = Math.max(0, product.current_stock_ml - ep.concentratedMl);
+              const history = Array.isArray(product.consumption_history) ? product.consumption_history : [];
+              history.push({
+                id: generateId(),
+                date: new Date().toISOString(),
+                volumeUsedMl: ep.concentratedMl,
+                serviceDescription: `Execução: ${appointment.service} - ${appointment.client_name}`,
+              });
+              await supabase.from("products").update({
+                current_stock_ml: newStock,
+                consumption_history: history,
+                stock_status: newStock <= (product.min_stock_ml || 0) ? 'critico' : newStock <= (product.current_stock_ml || 0) * 0.2 ? 'baixo' : 'ok',
+              }).eq("id", ep.productId);
+              ep.deducted = true;
+            }
+          }
+        }
+        setUsedProducts([...usedProducts]);
+      }
+
+      // Mark appointment as completed + update client history
+      if (status === "finalizado") {
+        await supabase.from("appointments").update({ status: "concluido" }).eq("id", appointmentId);
+
+        if (client) {
+          const history = Array.isArray(client.service_history) ? client.service_history : [];
+          history.push({
+            id: generateId(),
+            date: new Date().toISOString(),
+            serviceType: appointment.service,
+            products: usedProducts.map(ep => ep.productName),
+            observations: observations || processDesc.slice(0, 200),
+            clientId: appointment.client_id,
+            startTime,
+            endTime,
+            totalMinutes: elapsedMinutes,
+            technicianName: selectedTechnician || appointment.collaborator_name,
+          });
+          await supabase.from("clients").update({ service_history: history }).eq("id", client.id);
+        }
+
+        toast.success("Serviço finalizado e salvo com sucesso!");
+        setIsFinalized(true);
         return;
       }
-      toast.warning("Salvo sem fotos — armazenamento quase cheio. Considere exportar seus dados.");
+
+      toast.success("Progresso salvo!");
+    } catch (err) {
+      console.error("Error saving execution:", err);
+      toast.error("Erro ao salvar execução");
     }
-    setExecution(exec);
-
-    // Deduct stock for products not yet deducted
-    if (status === "finalizado" && isPro) {
-      usedProducts.forEach(ep => {
-        if (!ep.deducted) {
-          deductStock(ep.productId, ep.concentratedMl, `Execução: ${appointment.serviceType} - ${appointment.clientName}`);
-          ep.deducted = true;
-        }
-      });
-      setUsedProducts([...usedProducts]);
-      setProducts(db.getProducts());
-    }
-
-    // Mark appointment as completed and add to client service history
-    if (status === "finalizado") {
-      const appts = db.getAppointments();
-      const updated = appts.map(a => a.id === appointmentId ? { ...a, status: "concluido" as const } : a);
-      db.saveAppointments(updated);
-
-      // Register in client's service history
-      const clients = db.getClients();
-      const cIdx = clients.findIndex(c => c.id === appointment.clientId);
-      if (cIdx !== -1) {
-        const productNames = usedProducts.map(ep => ep.productName);
-        const serviceRecord = {
-          id: generateId(),
-          date: new Date().toISOString(),
-          serviceType: appointment.serviceType,
-          products: productNames,
-          observations: observations || processDesc.slice(0, 200),
-          clientId: appointment.clientId,
-          startTime,
-          endTime,
-          totalMinutes: elapsedMinutes,
-          technicianName: selectedTechnician || appointment.technicianName,
-        };
-        clients[cIdx].serviceHistory = [...(clients[cIdx].serviceHistory || []), serviceRecord];
-        db.saveClients(clients);
-      }
-
-      toast.success("Serviço finalizado e salvo com sucesso!");
-      // Don't navigate immediately — let user generate report / share
-      return;
-    }
-
-    toast.success("Progresso salvo!");
   };
 
-  // Generate execution report PDF — returns jsPDF doc
+  // Generate execution report PDF
   const generateExecutionReport = (andShare = false) => {
-    // Allow generating even if not finalized, save current state first
+    const apptForPdf = {
+      id: appointment.id,
+      clientId: appointment.client_id,
+      clientName: appointment.client_name,
+      date: appointment.date,
+      time: appointment.time,
+      serviceType: appointment.service || "",
+      observations: appointment.notes || "",
+      status: appointment.status as any,
+      technicianId: appointment.collaborator_id || "",
+      technicianName: selectedTechnician || appointment.collaborator_name || "",
+    };
+
+    const clientForPdf = client ? {
+      id: client.id,
+      name: client.name,
+      phone: client.phone || "",
+      address: client.address || "",
+      street: client.street || "",
+      number: client.number || "",
+      complement: client.complement || "",
+      neighborhood: client.neighborhood || "",
+      city: client.city || "",
+      state: client.state || "",
+      propertyType: client.property_type || "",
+      observations: client.observations || "",
+      serviceHistory: [],
+      createdAt: "",
+    } : null;
+
     const doc = generateExecutionReportPDF({
-      appointment: { ...appointment, technicianName: selectedTechnician || appointment.technicianName },
-      client,
+      appointment: apptForPdf,
+      client: clientForPdf,
       photosBefore,
       photosAfter,
       nonConformities,
@@ -400,30 +551,28 @@ export default function ServiceExecutionPage() {
       soilingType,
       totalMinutes: elapsedMinutes,
       totalCost,
-      company,
+      company: companyInfo,
       startTime,
       endTime,
     });
 
-    const fileName = `relatorio-execucao-${appointment.clientName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.pdf`;
+    const fileName = `relatorio-execucao-${appointment.client_name.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.pdf`;
 
     if (andShare) {
       const blob = doc.output('blob');
       const file = new File([blob], fileName, { type: 'application/pdf' });
 
-      // Try Web Share API first
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        navigator.share({ files: [file], title: `Relatório - ${appointment.clientName}`, text: `Relatório de execução do serviço de ${appointment.serviceType}` })
+        navigator.share({ files: [file], title: `Relatório - ${appointment.client_name}`, text: `Relatório de execução do serviço de ${appointment.service}` })
           .then(() => toast.success("Relatório compartilhado!"))
           .catch(() => {});
         return;
       }
 
-      // Fallback: open WhatsApp with download
       doc.save(fileName);
       const clientPhone = client?.phone?.replace(/\D/g, '') || '';
       const whatsappNumber = clientPhone.startsWith('55') ? clientPhone : `55${clientPhone}`;
-      const text = encodeURIComponent(`Olá ${appointment.clientName}! Segue o relatório do serviço de ${appointment.serviceType} realizado. O PDF foi salvo no seu dispositivo.`);
+      const text = encodeURIComponent(`Olá ${appointment.client_name}! Segue o relatório do serviço de ${appointment.service} realizado. O PDF foi salvo no seu dispositivo.`);
       if (clientPhone) {
         window.open(`https://wa.me/${whatsappNumber}?text=${text}`, '_blank');
       } else {
@@ -441,8 +590,8 @@ export default function ServiceExecutionPage() {
       <div className="mx-auto max-w-md space-y-3 pb-4">
         {/* Header info */}
         <div className="rounded-xl bg-card p-4 shadow-card border-l-4 border-l-primary">
-          <h3 className="font-semibold text-foreground">{appointment.clientName}</h3>
-          <p className="text-sm text-muted-foreground">{appointment.serviceType} • {new Date(appointment.date + "T00:00").toLocaleDateString("pt-BR")} {appointment.time && `às ${appointment.time}`}</p>
+          <h3 className="font-semibold text-foreground">{appointment.client_name}</h3>
+          <p className="text-sm text-muted-foreground">{appointment.service} • {new Date(appointment.date + "T00:00").toLocaleDateString("pt-BR")} {appointment.time && `às ${appointment.time}`}</p>
           {client && (
             <p className="text-xs text-muted-foreground mt-1">📍 {client.street ? `${client.street}, ${client.number} - ${client.neighborhood}, ${client.city}/${client.state}` : client.address || "Sem endereço"}</p>
           )}
@@ -639,22 +788,19 @@ export default function ServiceExecutionPage() {
 
         {/* Action buttons */}
         <div className="space-y-2 pt-2">
-          <Button className="w-full rounded-full gap-2" variant="outline" onClick={() => saveExecution("em_andamento")}>
+          <Button className="w-full rounded-full gap-2" variant="outline" onClick={() => saveExecution("in_progress")}>
             <Package className="h-4 w-4" /> Salvar Progresso
           </Button>
           <Button
             className={`w-full rounded-full gap-2 transition-all ${isFinalized ? 'bg-green-600 hover:bg-green-700 text-white' : ''}`}
-            onClick={() => {
-              saveExecution("finalizado");
-              setIsFinalized(true);
-            }}
+            onClick={() => saveExecution("finalizado")}
             disabled={isFinalized}
           >
             <CheckCircle2 className="h-4 w-4" />
             {isFinalized ? '✅ Serviço Finalizado' : 'Finalizar Serviço'}
             {!isFinalized && isPro && totalCost > 0 && <span className="text-xs opacity-80">(baixa estoque automática)</span>}
           </Button>
-          {(endTime || execution?.status === "finalizado") && (
+          {(endTime || isFinalized) && (
             <>
               <Button className="w-full rounded-full gap-2" variant="outline" onClick={() => generateExecutionReport(false)}>
                 <FileText className="h-4 w-4" /> 📄 Gerar Relatório com Fotos
@@ -715,7 +861,7 @@ export default function ServiceExecutionPage() {
                 <SelectContent>
                   {products.map(p => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.name} {p.availableVolume != null ? `(${p.availableVolume.toFixed(2)}L)` : ""}
+                      {p.name} {p.current_stock_ml != null ? `(${(p.current_stock_ml / 1000).toFixed(2)}L)` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
