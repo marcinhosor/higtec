@@ -2,7 +2,7 @@ import { db, Client, Equipment } from "./storage";
 
 export type AppNotification = {
   id: string;
-  type: 'appointment' | 'maintenance_client' | 'maintenance_equipment';
+  type: 'appointment' | 'maintenance_client' | 'maintenance_equipment' | 'quote_pending';
   title: string;
   message: string;
   level: 'info' | 'warning' | 'urgent';
@@ -100,6 +100,28 @@ export function buildNotifications(): AppNotification[] {
           message: `${eq.name} — ${diffDays < 0 ? `${Math.abs(diffDays)}d atrasada` : `${diffDays}d restantes`}`,
           level: diffDays < 0 ? 'urgent' : 'warning',
           entityId: eq.id,
+          createdAt: now.toISOString(),
+          dismissed: false,
+        });
+      }
+    });
+
+  // 4. Quotes pending for more than 1 day (no response)
+  const quotes = db.getQuotes();
+  quotes
+    .filter(q => q.status === 'pendente' || q.status === 'nao_respondeu')
+    .forEach(q => {
+      const created = new Date(q.createdAt);
+      const diffHours = (now.getTime() - created.getTime()) / (1000 * 60 * 60);
+      if (diffHours >= 24) {
+        const days = Math.floor(diffHours / 24);
+        notifications.push({
+          id: `quote-pending-${q.id}`,
+          type: 'quote_pending',
+          title: days >= 3 ? '🔴 Orçamento sem resposta' : '💬 Follow-up de orçamento',
+          message: `${q.clientName} — Orçamento ${String(q.number).padStart(2, '0')} há ${days} dia(s). Tente um upsell ou desconto para converter!`,
+          level: days >= 3 ? 'urgent' : 'warning',
+          entityId: q.id,
           createdAt: now.toISOString(),
           dismissed: false,
         });
