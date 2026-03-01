@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil, Key, Copy, Shield, Car } from "lucide-react";
+import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil, Key, Copy, Shield, Car, Monitor, Smartphone } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import ThemeSelector from "@/components/ThemeSelector";
@@ -69,6 +69,8 @@ export default function SettingsPage() {
   const [editingVehicle, setEditingVehicle] = useState<any | null>(null);
   const [vehicleForm, setVehicleForm] = useState({ model: "", plate: "", fuel_type: "gasolina", avg_consumption_km_l: 10, fuel_price_per_liter: 6.0, collaborator_id: "", notes: "" });
 
+  // Device sessions state
+  const [deviceSessions, setDeviceSessions] = useState<any[]>([]);
   // Load company data from cloud
   const loadCloudData = useCallback(async (cId: string) => {
     // Load company
@@ -116,6 +118,10 @@ export default function SettingsPage() {
     // Load vehicles
     const { data: vehs } = await supabase.from("vehicles").select("*").eq("company_id", cId).order("created_at");
     if (vehs) setVehicles(vehs);
+
+    // Load device sessions
+    const { data: devices } = await supabase.from("device_sessions").select("*").eq("company_id", cId).eq("is_active", true).order("last_active_at", { ascending: false });
+    if (devices) setDeviceSessions(devices);
 
     setLoading(false);
   }, [dbIsPro, dbPlanTier]);
@@ -379,6 +385,12 @@ export default function SettingsPage() {
     await supabase.from("vehicles").delete().eq("id", id);
     setVehicles(prev => prev.filter(v => v.id !== id));
     toast.success("Veículo removido");
+  };
+
+  const revokeDevice = async (deviceId: string) => {
+    await supabase.from("device_sessions").update({ is_active: false } as any).eq("id", deviceId);
+    setDeviceSessions(prev => prev.filter(d => d.id !== deviceId));
+    toast.success("Dispositivo revogado!");
   };
 
   const exportBackup = () => {
@@ -811,6 +823,43 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        {/* Device Sessions */}
+        {(dbPlanTier === 'pro' || dbPlanTier === 'premium') && deviceSessions.length > 0 && (
+          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                <Monitor className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-foreground">Dispositivos Ativos</h2>
+                <p className="text-xs text-muted-foreground">
+                  {dbPlanTier === 'pro' ? '1 PC + 2 celulares' : '1 PC + 9 celulares'}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {deviceSessions.map(d => (
+                <div key={d.id} className="rounded-lg border p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {d.device_type === 'desktop'
+                      ? <Monitor className="h-4 w-4 text-muted-foreground" />
+                      : <Smartphone className="h-4 w-4 text-muted-foreground" />}
+                    <div>
+                      <p className="font-medium text-foreground text-sm">{d.device_name || d.device_type}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Último acesso: {new Date(d.last_active_at).toLocaleDateString("pt-BR")}
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => revokeDevice(d.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Vehicles (Premium) */}
         {dbPlanTier === 'premium' && (
