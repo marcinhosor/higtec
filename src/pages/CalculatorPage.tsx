@@ -6,7 +6,7 @@ import { useCompanyPlan } from "@/hooks/use-company-plan";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Calculator, Package, Lock } from "lucide-react";
+import { Calculator, Package, Lock, Droplets } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
@@ -18,9 +18,10 @@ type ProductRow = {
 
 export default function CalculatorPage() {
   const { user } = useAuth();
-  const [dilution, setDilution] = useState("");
+  const [dilutionPart, setDilutionPart] = useState("");
+  const [waterPart, setWaterPart] = useState("");
   const [volume, setVolume] = useState("");
-  const [result, setResult] = useState<number | null>(null);
+  const [result, setResult] = useState<{ product: number; water: number } | null>(null);
   const { isPro } = useCompanyPlan();
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -39,12 +40,14 @@ export default function CalculatorPage() {
   }, [user]);
 
   const calculate = () => {
-    const parts = dilution.split(":").map(s => parseFloat(s.trim()));
+    const pPart = parseFloat(dilutionPart);
+    const wPart = parseFloat(waterPart);
     const vol = parseFloat(volume);
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(vol) && parts[1] > 0) {
-      const ratio = parts[1] / parts[0];
-      const ml = (vol / ratio) * 1000;
-      setResult(Math.round(ml * 100) / 100);
+    if (!isNaN(pPart) && !isNaN(wPart) && !isNaN(vol) && pPart > 0 && wPart > 0 && vol > 0) {
+      const totalParts = pPart + wPart;
+      const productMl = Math.round((pPart / totalParts) * vol * 1000 * 100) / 100;
+      const waterMl = Math.round((wPart / totalParts) * vol * 1000 * 100) / 100;
+      setResult({ product: productMl, water: waterMl });
     } else {
       setResult(null);
     }
@@ -58,7 +61,7 @@ export default function CalculatorPage() {
     const product = products.find(p => p.id === selectedProductId);
     if (!product) return;
 
-    const newStock = (product.current_stock_ml || 0) - result;
+    const newStock = (product.current_stock_ml || 0) - result.product;
     const { error } = await supabase.from("products").update({
       current_stock_ml: Math.max(0, newStock),
     }).eq("id", selectedProductId);
@@ -67,7 +70,7 @@ export default function CalculatorPage() {
       toast.error("Erro ao atualizar estoque");
       return;
     }
-    toast.success(`Baixa de ${result}ml registrada no estoque!`);
+    toast.success(`Baixa de ${result.product}ml registrada no estoque!`);
     // Refresh products
     const { data: prods } = await supabase.from("products").select("id, name, current_stock_ml").eq("company_id", companyId).order("name");
     setProducts(prods || []);
@@ -89,7 +92,7 @@ export default function CalculatorPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             {isPro && products.length > 0 && (
               <div>
                 <Label>Produto (opcional)</Label>
@@ -111,31 +114,77 @@ export default function CalculatorPage() {
               </div>
             )}
 
-            <div>
-              <Label>Diluição recomendada</Label>
-              <Input value={dilution} onChange={e => setDilution(e.target.value)} placeholder="Ex: 1:10" className="mt-1" />
-              <p className="text-xs text-muted-foreground mt-1">Formato: 1:10, 1:20, etc.</p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+              {/* Produto */}
+              <div className="rounded-xl border border-border bg-muted/40 p-4 text-center space-y-2">
+                <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <Package className="h-3.5 w-3.5" />
+                  Produto
+                </div>
+                <Input
+                  value={dilutionPart}
+                  onChange={e => setDilutionPart(e.target.value)}
+                  placeholder="1"
+                  className="text-center text-2xl font-bold h-12"
+                  type="number"
+                  min="1"
+                />
+                <p className="text-[10px] text-muted-foreground">parte(s)</p>
+              </div>
+
+              <span className="text-2xl font-bold text-muted-foreground pb-6">:</span>
+
+              {/* Água */}
+              <div className="rounded-xl border border-border bg-muted/40 p-4 text-center space-y-2">
+                <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <Droplets className="h-3.5 w-3.5" />
+                  Água
+                </div>
+                <Input
+                  value={waterPart}
+                  onChange={e => setWaterPart(e.target.value)}
+                  placeholder="10"
+                  className="text-center text-2xl font-bold h-12"
+                  type="number"
+                  min="1"
+                />
+                <p className="text-[10px] text-muted-foreground">parte(s)</p>
+              </div>
             </div>
+
             <div>
-              <Label>Volume de água (litros)</Label>
+              <Label>Volume total de calda (litros)</Label>
               <Input type="number" value={volume} onChange={e => setVolume(e.target.value)} placeholder="Ex: 5" className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">Quantos litros de solução você quer preparar?</p>
             </div>
+
             <Button onClick={calculate} className="w-full rounded-full">Calcular</Button>
           </div>
         </div>
 
         {result !== null && (
-          <div className="rounded-xl gradient-primary p-6 text-center shadow-card animate-scale-in">
-            <p className="text-sm text-primary-foreground/80 font-medium">Quantidade de produto</p>
-            <p className="text-4xl font-extrabold text-primary-foreground mt-1">{result} ml</p>
-            <p className="text-xs text-primary-foreground/70 mt-2">Para {volume}L de água na diluição {dilution}</p>
+          <div className="rounded-xl gradient-primary p-6 shadow-card animate-scale-in space-y-4">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
+              <div>
+                <p className="text-xs text-primary-foreground/70 font-medium uppercase tracking-wide">Produto</p>
+                <p className="text-3xl font-extrabold text-primary-foreground mt-1">{result.product} ml</p>
+              </div>
+              <span className="text-xl font-bold text-primary-foreground/50">+</span>
+              <div>
+                <p className="text-xs text-primary-foreground/70 font-medium uppercase tracking-wide">Água</p>
+                <p className="text-3xl font-extrabold text-primary-foreground mt-1">{result.water} ml</p>
+              </div>
+            </div>
+            <p className="text-xs text-primary-foreground/70 text-center">
+              Proporção {dilutionPart}:{waterPart} — Total: {volume}L de calda
+            </p>
           </div>
         )}
 
         {result !== null && isPro && selectedProductId && (
           <div className="rounded-xl bg-card p-4 shadow-card animate-fade-in">
             <Button onClick={handleDeductStock} className="w-full rounded-full gap-2" variant="outline">
-              <Package className="h-4 w-4" /> Dar Baixa no Estoque ({result}ml)
+              <Package className="h-4 w-4" /> Dar Baixa no Estoque ({result.product}ml)
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-2">O volume será descontado automaticamente do produto</p>
           </div>
