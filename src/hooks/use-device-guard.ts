@@ -68,6 +68,17 @@ export function useDeviceGuard(): DeviceGuardResult {
   const checkAndRegister = useCallback(async () => {
     if (!user || !companyId || planLoading) return;
 
+    // Master admin (dev account) bypasses device limits
+    try {
+      const { data: isMaster } = await supabase.rpc("is_master_admin", { _user_id: user.id });
+      if (isMaster) {
+        setAllowed(true);
+        setLoading(false);
+        return;
+      }
+    } catch {}
+
+
     try {
       // Get company overrides
       const { data: company } = await supabase
