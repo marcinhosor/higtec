@@ -75,6 +75,21 @@ export default function AdminPanelPage() {
   const [loadingData, setLoadingData] = useState(false);
   const [searchCompany, setSearchCompany] = useState("");
   const [searchMember, setSearchMember] = useState("");
+
+  // Device sessions state
+  interface DeviceSessionRow {
+    id: string;
+    company_id: string;
+    user_id: string;
+    device_id: string;
+    device_type: string;
+    device_name: string | null;
+    is_active: boolean;
+    last_active_at: string;
+    created_at: string;
+  }
+  const [deviceSessions, setDeviceSessions] = useState<DeviceSessionRow[]>([]);
+  const [searchDevice, setSearchDevice] = useState("");
   const [selectedCompany, setSelectedCompany] = useState<CompanyRow | null>(null);
 
   useEffect(() => {
@@ -183,20 +198,21 @@ export default function AdminPanelPage() {
   const loadAllData = async () => {
     setLoadingData(true);
     try {
-      const [companiesRes, membersRes] = await Promise.all([
+      const [companiesRes, membersRes, devicesRes] = await Promise.all([
         supabase.from("companies").select("*").order("created_at", { ascending: false }),
         supabase.from("company_memberships").select("*, profiles:user_id(full_name, phone, avatar_url)").order("created_at", { ascending: false }),
+        supabase.from("device_sessions").select("*").order("last_active_at", { ascending: false }),
       ]);
 
       if (companiesRes.data) setCompanies(companiesRes.data as CompanyRow[]);
       if (membersRes.data) {
-        // Map the joined data
         const mapped = (membersRes.data as any[]).map((m) => ({
           ...m,
           profile: m.profiles || null,
         }));
         setMembers(mapped);
       }
+      if (devicesRes.data) setDeviceSessions(devicesRes.data as any);
     } catch (err) {
       console.error("Error loading admin data:", err);
       toast.error("Erro ao carregar dados");
@@ -581,9 +597,10 @@ export default function AdminPanelPage() {
         </div>
 
         <Tabs defaultValue="companies" className="w-full">
-          <TabsList className="w-full grid grid-cols-3">
+          <TabsList className="w-full grid grid-cols-4">
             <TabsTrigger value="companies">Empresas</TabsTrigger>
             <TabsTrigger value="members">Usuários</TabsTrigger>
+            <TabsTrigger value="devices">Dispositivos</TabsTrigger>
             <TabsTrigger value="payments">Pagamentos</TabsTrigger>
           </TabsList>
 
@@ -820,6 +837,170 @@ export default function AdminPanelPage() {
                         </TableRow>
                       ))
                     )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Devices Tab */}
+          <TabsContent value="devices" className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por empresa, dispositivo ou tipo..."
+                  value={searchDevice}
+                  onChange={(e) => setSearchDevice(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button variant="outline" size="icon" onClick={loadAllData} disabled={loadingData}>
+                <RefreshCw className={`h-4 w-4 ${loadingData ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <Card>
+                <CardContent className="pt-4 pb-3 px-4">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Celulares Ativos</span>
+                  </div>
+                  <p className="text-2xl font-bold text-foreground mt-1">
+                    {deviceSessions.filter(d => d.is_active && d.device_type === "mobile").length}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3 px-4">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Computadores Ativos</span>
+                  </div>
+                  <p className="text-2xl font-bold text-foreground mt-1">
+                    {deviceSessions.filter(d => d.is_active && d.device_type === "desktop").length}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3 px-4">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Total Sessões</span>
+                  </div>
+                  <p className="text-2xl font-bold text-foreground mt-1">{deviceSessions.length}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Dispositivo</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead className="hidden md:table-cell">Tipo</TableHead>
+                      <TableHead className="hidden md:table-cell">Último Acesso</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(() => {
+                      const q = searchDevice.toLowerCase();
+                      const filtered = deviceSessions.filter(d => {
+                        const companyName = companies.find(c => c.id === d.company_id)?.name || "";
+                        return (
+                          (d.device_name || "").toLowerCase().includes(q) ||
+                          companyName.toLowerCase().includes(q) ||
+                          d.device_type.toLowerCase().includes(q) ||
+                          d.device_id.toLowerCase().includes(q)
+                        );
+                      });
+                      if (filtered.length === 0) {
+                        return (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                              Nenhum dispositivo encontrado
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+                      return filtered.map(d => {
+                        const company = companies.find(c => c.id === d.company_id);
+                        return (
+                          <TableRow key={d.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {d.device_type === "mobile" ? <Smartphone className="h-4 w-4 text-muted-foreground" /> : <Monitor className="h-4 w-4 text-muted-foreground" />}
+                                <div>
+                                  <p className="font-medium text-foreground text-sm">{d.device_name || "Dispositivo"}</p>
+                                  <p className="text-xs text-muted-foreground font-mono">{d.device_id.slice(0, 8)}...</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <p className="text-sm text-foreground">{company?.name || "—"}</p>
+                              {company && getPlanBadge(company.plan_tier)}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-muted-foreground text-sm capitalize">{d.device_type}</TableCell>
+                            <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                              {new Date(d.last_active_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </TableCell>
+                            <TableCell>
+                              {d.is_active ? (
+                                <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Ativo</Badge>
+                              ) : (
+                                <Badge variant="secondary">Revogado</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {d.is_active ? (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={async () => {
+                                    const { error } = await supabase
+                                      .from("device_sessions")
+                                      .update({ is_active: false })
+                                      .eq("id", d.id);
+                                    if (error) {
+                                      toast.error("Erro ao revogar dispositivo");
+                                    } else {
+                                      toast.success("Dispositivo revogado");
+                                      setDeviceSessions(prev => prev.map(s => s.id === d.id ? { ...s, is_active: false } : s));
+                                    }
+                                  }}
+                                >
+                                  Revogar
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={async () => {
+                                    const { error } = await supabase
+                                      .from("device_sessions")
+                                      .update({ is_active: true })
+                                      .eq("id", d.id);
+                                    if (error) {
+                                      toast.error("Erro ao reativar dispositivo");
+                                    } else {
+                                      toast.success("Dispositivo reativado");
+                                      setDeviceSessions(prev => prev.map(s => s.id === d.id ? { ...s, is_active: true } : s));
+                                    }
+                                  }}
+                                >
+                                  Reativar
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      });
+                    })()}
                   </TableBody>
                 </Table>
               </CardContent>
