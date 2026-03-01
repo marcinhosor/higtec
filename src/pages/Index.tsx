@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users, Calendar, Calculator, Package, FileText, Settings, Receipt, AlertTriangle, Clock, BarChart3, Wrench, ShoppingBag } from "lucide-react";
 import { getLowStockProducts, getPendingMaintenanceEquipment, Product, Equipment, db, Client } from "@/lib/storage";
@@ -8,6 +8,8 @@ import OnboardingChecklist from "@/components/OnboardingChecklist";
 import OnboardingBanner from "@/components/OnboardingBanner";
 import NotificationCenter from "@/components/NotificationCenter";
 import { useTheme } from "@/hooks/use-theme";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 const menuItems = [
   { path: "/clientes", icon: Users, label: "Clientes", desc: "Gerencie seus clientes" },
@@ -45,7 +47,6 @@ function getMaintenanceAlerts(): MaintenanceAlert[] {
       }, history[0]);
       referenceDate = lastService.date;
     } else {
-      // No service history — use client creation date as reference
       referenceDate = client.createdAt;
     }
 
@@ -72,7 +73,6 @@ function getMaintenanceAlerts(): MaintenanceAlert[] {
     }
   });
 
-  // Sort: urgent first, then danger, warning, recent
   const order = { urgent: 0, danger: 1, warning: 2, recent: 3 };
   alerts.sort((a, b) => order[a.level] - order[b.level]);
 
@@ -95,14 +95,39 @@ function getAlertStyles(level: MaintenanceAlert['level']) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const { user } = useAuth();
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [maintenanceAlerts, setMaintenanceAlerts] = useState<MaintenanceAlert[]>([]);
   const [equipmentAlerts, setEquipmentAlerts] = useState<Equipment[]>([]);
 
-  const company = useMemo(() => db.getCompany(), []);
-  const isPro = company.isPro || company.planTier === 'pro' || company.planTier === 'premium';
-  const companyLogo = isPro && company.logo ? company.logo : null;
-  const companyName = isPro && company.name ? company.name : null;
+  // Cloud company data for name/logo
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [planTier, setPlanTier] = useState<string>('free');
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!profile?.company_id) return;
+      const { data: company } = await supabase
+        .from("companies")
+        .select("name, logo_url, plan_tier")
+        .eq("id", profile.company_id)
+        .maybeSingle();
+      if (!company) return;
+      setPlanTier(company.plan_tier || 'free');
+      const isPro = company.plan_tier === 'pro' || company.plan_tier === 'premium';
+      if (isPro) {
+        setCompanyName(company.name || null);
+        setCompanyLogo(company.logo_url || null);
+      }
+    })();
+  }, [user]);
 
   useEffect(() => {
     setLowStockProducts(getLowStockProducts());
