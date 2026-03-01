@@ -15,6 +15,8 @@ import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import ThemeSelector from "@/components/ThemeSelector";
+import CsvImporter from "@/components/CsvImporter";
+import { FileSpreadsheet } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 
 const pixTypeLabels: Record<PixKey['type'], string> = {
@@ -945,6 +947,22 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* CSV Import - PRO */}
+        {dbIsPro && companyId && (
+          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <FileSpreadsheet className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-foreground">Importar CSV</h2>
+                <p className="text-xs text-muted-foreground">Migre dados de outras ferramentas</p>
+              </div>
+            </div>
+            <CsvImporter companyId={companyId} />
           </div>
         )}
 
