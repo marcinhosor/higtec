@@ -113,3 +113,11 @@
     box-shadow: 0 8px 24px -4px hsl(207 90% 54% / 0.18), 0 2px 6px hsl(0 0% 0% / 0.08);
   }
 }
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
