@@ -483,27 +483,56 @@ export default function SettingsPage() {
                   <h2 className="font-semibold text-foreground">Plano da Conta</h2>
                   <p className="text-xs text-muted-foreground">Gerencie sua assinatura</p>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-bold">
-                  {dbPlanTier === 'free' && '🆓 FREE'}
-                  {dbPlanTier === 'pro' && '⭐ PRO'}
-                  {dbPlanTier === 'premium' && '👑 PREMIUM'}
-                </span>
                 {isTrialActive && (
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                    Trial — {trialDaysRemaining} dias restantes
+                  <span className="ml-auto text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                    Trial — {trialDaysRemaining}d
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {dbPlanTier === 'free' && 'Funcionalidades básicas. Sem personalização visual ou relatórios avançados.'}
-                {dbPlanTier === 'pro' && 'Personalização visual, relatórios avançados, estoque integrado e PDF profissional.'}
-                {dbPlanTier === 'premium' && 'Tudo do PRO + Dashboard estratégico, manutenção de equipamentos, gráficos e ranking.'}
+
+              {/* Plan Cards */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {([
+                  { tier: "free" as const, label: "Free", emoji: "🆓", price: "R$ 0", desc: "Básico" },
+                  { tier: "pro" as const, label: "Pro", emoji: "⭐", price: "R$ 99", desc: "Profissional" },
+                  { tier: "premium" as const, label: "Premium", emoji: "👑", price: "R$ 199", desc: "Completo" },
+                ] as const).map(plan => {
+                  const isCurrent = dbPlanTier === plan.tier;
+                  return (
+                    <button
+                      key={plan.tier}
+                      onClick={() => {
+                        if (!isCurrent) navigate('/checkout');
+                      }}
+                      className={`relative flex flex-col items-center gap-1 rounded-xl p-3 text-center transition-all border ${
+                        isCurrent
+                          ? "border-primary bg-primary/10 ring-2 ring-primary/30 shadow-sm"
+                          : "border-border bg-muted/30 hover:border-primary/40 hover:bg-muted/60"
+                      }`}
+                    >
+                      {isCurrent && (
+                        <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+                          ATUAL
+                        </span>
+                      )}
+                      <span className="text-lg">{plan.emoji}</span>
+                      <span className={`text-xs font-bold ${isCurrent ? "text-primary" : "text-foreground"}`}>{plan.label}</span>
+                      <span className="text-[10px] text-muted-foreground">{plan.price}/mês</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                {dbPlanTier === 'free' && 'Agenda, cadastro de clientes e orçamentos básicos.'}
+                {dbPlanTier === 'pro' && 'Personalização visual, estoque, relatórios e PDF profissional.'}
+                {dbPlanTier === 'premium' && 'Tudo do PRO + dashboard estratégico, frotas e equipamentos.'}
               </p>
-              {dbPlanTier === 'free' && !isTrialActive && (
+
+              {dbPlanTier !== 'premium' && (
                 <Button onClick={() => navigate('/checkout')} className="mt-3 w-full" size="sm">
-                  <Crown className="mr-2 h-4 w-4" /> Fazer upgrade
+                  <Crown className="mr-2 h-4 w-4" />
+                  {dbPlanTier === 'free' ? 'Fazer upgrade' : 'Upgrade para Premium'}
                 </Button>
               )}
             </div>
