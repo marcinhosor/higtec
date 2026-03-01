@@ -820,6 +820,172 @@ export type Database = {
         }
         Relationships: []
       }
+      vehicle_trips: {
+        Row: {
+          actual_cost: number | null
+          actual_distance_km: number | null
+          appointment_id: string | null
+          checkin_at: string | null
+          checkin_lat: number | null
+          checkin_lng: number | null
+          checkout_at: string | null
+          checkout_lat: number | null
+          checkout_lng: number | null
+          collaborator_id: string | null
+          company_id: string
+          created_at: string
+          destination_address: string | null
+          destination_lat: number | null
+          destination_lng: number | null
+          deviation_details: string | null
+          estimated_cost: number | null
+          estimated_distance_km: number | null
+          id: string
+          origin_address: string | null
+          origin_lat: number | null
+          origin_lng: number | null
+          route_deviation: boolean | null
+          status: string
+          updated_at: string
+          vehicle_id: string
+        }
+        Insert: {
+          actual_cost?: number | null
+          actual_distance_km?: number | null
+          appointment_id?: string | null
+          checkin_at?: string | null
+          checkin_lat?: number | null
+          checkin_lng?: number | null
+          checkout_at?: string | null
+          checkout_lat?: number | null
+          checkout_lng?: number | null
+          collaborator_id?: string | null
+          company_id: string
+          created_at?: string
+          destination_address?: string | null
+          destination_lat?: number | null
+          destination_lng?: number | null
+          deviation_details?: string | null
+          estimated_cost?: number | null
+          estimated_distance_km?: number | null
+          id?: string
+          origin_address?: string | null
+          origin_lat?: number | null
+          origin_lng?: number | null
+          route_deviation?: boolean | null
+          status?: string
+          updated_at?: string
+          vehicle_id: string
+        }
+        Update: {
+          actual_cost?: number | null
+          actual_distance_km?: number | null
+          appointment_id?: string | null
+          checkin_at?: string | null
+          checkin_lat?: number | null
+          checkin_lng?: number | null
+          checkout_at?: string | null
+          checkout_lat?: number | null
+          checkout_lng?: number | null
+          collaborator_id?: string | null
+          company_id?: string
+          created_at?: string
+          destination_address?: string | null
+          destination_lat?: number | null
+          destination_lng?: number | null
+          deviation_details?: string | null
+          estimated_cost?: number | null
+          estimated_distance_km?: number | null
+          id?: string
+          origin_address?: string | null
+          origin_lat?: number | null
+          origin_lng?: number | null
+          route_deviation?: boolean | null
+          status?: string
+          updated_at?: string
+          vehicle_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicle_trips_collaborator_id_fkey"
+            columns: ["collaborator_id"]
+            isOneToOne: false
+            referencedRelation: "collaborators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicle_trips_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicle_trips_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vehicles: {
+        Row: {
+          avg_consumption_km_l: number
+          collaborator_id: string | null
+          company_id: string
+          created_at: string
+          fuel_price_per_liter: number
+          fuel_type: string
+          id: string
+          model: string
+          notes: string | null
+          plate: string
+          updated_at: string
+        }
+        Insert: {
+          avg_consumption_km_l?: number
+          collaborator_id?: string | null
+          company_id: string
+          created_at?: string
+          fuel_price_per_liter?: number
+          fuel_type?: string
+          id?: string
+          model?: string
+          notes?: string | null
+          plate?: string
+          updated_at?: string
+        }
+        Update: {
+          avg_consumption_km_l?: number
+          collaborator_id?: string | null
+          company_id?: string
+          created_at?: string
+          fuel_price_per_liter?: number
+          fuel_type?: string
+          id?: string
+          model?: string
+          notes?: string | null
+          plate?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_collaborator_id_fkey"
+            columns: ["collaborator_id"]
+            isOneToOne: false
+            referencedRelation: "collaborators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
