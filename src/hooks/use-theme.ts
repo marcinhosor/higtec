@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { db, THEME_PALETTES, DEFAULT_CUSTOM_THEME, type ThemePalette, type CustomTheme } from "@/lib/storage";
+import { THEME_PALETTES, DEFAULT_CUSTOM_THEME, type ThemePalette, type CustomTheme } from "@/lib/storage";
+import { supabase } from "@/integrations/supabase/client";
 
 function hexToHsl(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -20,26 +21,27 @@ function hexToHsl(hex: string): string {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
-export function getActiveTheme(): ThemePalette {
-  const company = db.getCompany();
-  const canUseTheme = company.isPro || company.planTier === 'pro' || company.planTier === 'premium';
+export function resolveTheme(
+  planTier: string | null | undefined,
+  selectedThemeId: string | null | undefined,
+  customTheme: any | null | undefined
+): ThemePalette {
+  const canUseTheme = planTier === 'pro' || planTier === 'premium';
   if (!canUseTheme) return THEME_PALETTES[0];
 
-  // Check for custom theme (Premium only)
-  if (company.customTheme?.enabled && company.planTier === 'premium') {
-    const ct = company.customTheme;
+  if (customTheme?.enabled && planTier === 'premium') {
     return {
       id: 'custom',
       name: 'Personalizado',
-      primary: ct.primary,
-      secondary: ct.secondary,
-      accent: ct.accent,
-      background: ct.background,
-      cta: ct.cta,
+      primary: customTheme.primary,
+      secondary: customTheme.secondary,
+      accent: customTheme.accent,
+      background: customTheme.background,
+      cta: customTheme.cta,
     };
   }
 
-  return THEME_PALETTES.find(t => t.id === company.selectedThemeId) || THEME_PALETTES[0];
+  return THEME_PALETTES.find(t => t.id === selectedThemeId) || THEME_PALETTES[0];
 }
 
 export function applyThemeToDOM(theme: ThemePalette) {
@@ -55,27 +57,54 @@ export function applyThemeToDOM(theme: ThemePalette) {
 }
 
 export function useTheme() {
-  const [theme, setThemeState] = useState<ThemePalette>(() => getActiveTheme());
+  const [theme, setThemeState] = useState<ThemePalette>(THEME_PALETTES[0]);
+  const [cloudCompany, setCloudCompany] = useState<{
+    planTier?: string;
+    selectedThemeId?: string;
+    customTheme?: any;
+  } | null>(null);
+
+  // Load theme from cloud on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!profile?.company_id || cancelled) return;
+      const { data: company } = await supabase
+        .from("companies")
+        .select("plan_tier, selected_theme_id, custom_theme")
+        .eq("id", profile.company_id)
+        .maybeSingle();
+      if (!company || cancelled) return;
+      setCloudCompany({
+        planTier: company.plan_tier,
+        selectedThemeId: company.selected_theme_id ?? 'default',
+        customTheme: company.custom_theme,
+      });
+      const t = resolveTheme(company.plan_tier, company.selected_theme_id, company.custom_theme);
+      setThemeState(t);
+      applyThemeToDOM(t);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     applyThemeToDOM(theme);
   }, [theme]);
 
   const setTheme = useCallback((themeId: string) => {
-    const company = db.getCompany();
-    company.selectedThemeId = themeId;
-    if (company.customTheme) company.customTheme.enabled = false;
-    db.saveCompany(company);
     const t = THEME_PALETTES.find(p => p.id === themeId) || THEME_PALETTES[0];
     setThemeState(t);
     applyThemeToDOM(t);
   }, []);
 
   const setCustomTheme = useCallback((custom: CustomTheme) => {
-    const company = db.getCompany();
-    company.customTheme = { ...custom, enabled: true };
-    company.selectedThemeId = 'custom';
-    db.saveCompany(company);
     const t: ThemePalette = {
       id: 'custom',
       name: 'Personalizado',
@@ -89,8 +118,22 @@ export function useTheme() {
     applyThemeToDOM(t);
   }, []);
 
-  const refresh = useCallback(() => {
-    const t = getActiveTheme();
+  const refresh = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!profile?.company_id) return;
+    const { data: company } = await supabase
+      .from("companies")
+      .select("plan_tier, selected_theme_id, custom_theme")
+      .eq("id", profile.company_id)
+      .maybeSingle();
+    if (!company) return;
+    const t = resolveTheme(company.plan_tier, company.selected_theme_id, company.custom_theme);
     setThemeState(t);
     applyThemeToDOM(t);
   }, []);

@@ -1,10 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
-import { getActiveTheme, applyThemeToDOM } from "./hooks/use-theme";
-
-// Apply saved theme on startup
-applyThemeToDOM(getActiveTheme());
+// Theme is now loaded from cloud via useTheme hook
 
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
