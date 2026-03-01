@@ -53,8 +53,8 @@ type EquipmentRow = {
 export default function EquipmentPage() {
   const { user } = useAuth();
   const [companyId, setCompanyId] = useState<string | null>(null);
-  const { planTier, isTrialActive } = useCompanyPlan();
-  const isPremium = planTier === "premium" || planTier === "pro" || isTrialActive;
+  const { planTier } = useCompanyPlan();
+  const isPremium = planTier === "premium";
   const { showModal, setShowModal } = useProGate();
   const [equipment, setEquipment] = useState<EquipmentRow[]>([]);
   const [loading, setLoading] = useState(true);
