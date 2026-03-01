@@ -13,9 +13,9 @@ import {
 import {
   Shield, Webhook, CreditCard, ExternalLink, CheckCircle, AlertCircle,
   Users, Building2, Search, RefreshCw, Crown, Eye, Lock, KeyRound, Save,
+  Smartphone, Monitor, Briefcase, ClipboardList, MapPin, Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Smartphone, Monitor } from "lucide-react";
 
 interface CompanyRow {
   id: string;
@@ -90,6 +90,10 @@ export default function AdminPanelPage() {
   }
   const [deviceSessions, setDeviceSessions] = useState<DeviceSessionRow[]>([]);
   const [searchDevice, setSearchDevice] = useState("");
+
+  // Company stats
+  const [collaboratorCounts, setCollaboratorCounts] = useState<Record<string, number>>({});
+  const [serviceExecutionCounts, setServiceExecutionCounts] = useState<Record<string, number>>({});
   const [selectedCompany, setSelectedCompany] = useState<CompanyRow | null>(null);
 
   useEffect(() => {
@@ -198,10 +202,12 @@ export default function AdminPanelPage() {
   const loadAllData = async () => {
     setLoadingData(true);
     try {
-      const [companiesRes, membersRes, devicesRes] = await Promise.all([
+      const [companiesRes, membersRes, devicesRes, collaboratorsRes, executionsRes] = await Promise.all([
         supabase.from("companies").select("*").order("created_at", { ascending: false }),
         supabase.from("company_memberships").select("*, profiles:user_id(full_name, phone, avatar_url)").order("created_at", { ascending: false }),
         supabase.from("device_sessions").select("*").order("last_active_at", { ascending: false }),
+        supabase.from("collaborators").select("id, company_id"),
+        supabase.from("service_executions").select("id, company_id"),
       ]);
 
       if (companiesRes.data) setCompanies(companiesRes.data as CompanyRow[]);
@@ -213,6 +219,22 @@ export default function AdminPanelPage() {
         setMembers(mapped);
       }
       if (devicesRes.data) setDeviceSessions(devicesRes.data as any);
+
+      // Build counts by company
+      if (collaboratorsRes.data) {
+        const counts: Record<string, number> = {};
+        collaboratorsRes.data.forEach((c: any) => {
+          counts[c.company_id] = (counts[c.company_id] || 0) + 1;
+        });
+        setCollaboratorCounts(counts);
+      }
+      if (executionsRes.data) {
+        const counts: Record<string, number> = {};
+        executionsRes.data.forEach((e: any) => {
+          counts[e.company_id] = (counts[e.company_id] || 0) + 1;
+        });
+        setServiceExecutionCounts(counts);
+      }
     } catch (err) {
       console.error("Error loading admin data:", err);
       toast.error("Erro ao carregar dados");
@@ -624,63 +646,71 @@ export default function AdminPanelPage() {
             <Card>
               <CardContent className="p-0">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Empresa</TableHead>
-                      <TableHead className="hidden md:table-cell">Cidade/UF</TableHead>
-                      <TableHead>Plano</TableHead>
-                      <TableHead className="hidden md:table-cell">Cadastro</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredCompanies.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                          {loadingData ? "Carregando..." : "Nenhuma empresa encontrada"}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredCompanies.map((c) => (
-                        <TableRow key={c.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium text-foreground">{c.name}</p>
-                              {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
-                              {c.cnpj && <p className="text-xs text-muted-foreground">CNPJ: {c.cnpj}</p>}
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-muted-foreground">
-                            {[c.city, c.state].filter(Boolean).join("/") || "—"}
-                          </TableCell>
-                          <TableCell>{getPlanBadge(c.plan_tier)}</TableCell>
-                          <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
-                            {formatDate(c.created_at)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <select
-                                value={c.plan_tier}
-                                onChange={(e) => handleChangePlan(c.id, e.target.value as 'free' | 'pro' | 'premium')}
-                                className="text-xs border rounded px-2 py-1 bg-background text-foreground"
-                              >
-                                <option value="free">FREE</option>
-                                <option value="pro">PRO</option>
-                                <option value="premium">PREMIUM</option>
-                              </select>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setSelectedCompany(selectedCompany?.id === c.id ? null : c)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
+                   <TableHeader>
+                     <TableRow>
+                       <TableHead>Empresa</TableHead>
+                       <TableHead className="hidden md:table-cell">Cidade/UF</TableHead>
+                       <TableHead>Plano</TableHead>
+                       <TableHead className="hidden md:table-cell">Funcionários</TableHead>
+                       <TableHead className="hidden md:table-cell">Serviços</TableHead>
+                       <TableHead className="hidden md:table-cell">Cadastro</TableHead>
+                       <TableHead className="text-right">Ações</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {filteredCompanies.length === 0 ? (
+                       <TableRow>
+                         <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                           {loadingData ? "Carregando..." : "Nenhuma empresa encontrada"}
+                         </TableCell>
+                       </TableRow>
+                     ) : (
+                       filteredCompanies.map((c) => (
+                         <TableRow key={c.id}>
+                           <TableCell>
+                             <div>
+                               <p className="font-medium text-foreground">{c.name}</p>
+                               {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
+                               {c.cnpj && <p className="text-xs text-muted-foreground">CNPJ: {c.cnpj}</p>}
+                             </div>
+                           </TableCell>
+                           <TableCell className="hidden md:table-cell text-muted-foreground">
+                             {[c.city, c.state].filter(Boolean).join("/") || "—"}
+                           </TableCell>
+                           <TableCell>{getPlanBadge(c.plan_tier)}</TableCell>
+                           <TableCell className="hidden md:table-cell text-muted-foreground text-center">
+                             {collaboratorCounts[c.id] || 0}
+                           </TableCell>
+                           <TableCell className="hidden md:table-cell text-muted-foreground text-center">
+                             {serviceExecutionCounts[c.id] || 0}
+                           </TableCell>
+                           <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                             {formatDate(c.created_at)}
+                           </TableCell>
+                           <TableCell className="text-right">
+                             <div className="flex items-center justify-end gap-1">
+                               <select
+                                 value={c.plan_tier}
+                                 onChange={(e) => handleChangePlan(c.id, e.target.value as 'free' | 'pro' | 'premium')}
+                                 className="text-xs border rounded px-2 py-1 bg-background text-foreground"
+                               >
+                                 <option value="free">FREE</option>
+                                 <option value="pro">PRO</option>
+                                 <option value="premium">PREMIUM</option>
+                               </select>
+                               <Button
+                                 variant="ghost"
+                                 size="sm"
+                                 onClick={() => setSelectedCompany(selectedCompany?.id === c.id ? null : c)}
+                               >
+                                 <Eye className="h-4 w-4" />
+                               </Button>
+                             </div>
+                           </TableCell>
+                         </TableRow>
+                       ))
+                     )}
+                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
@@ -692,8 +722,8 @@ export default function AdminPanelPage() {
                   <CardTitle className="text-lg">{selectedCompany.name}</CardTitle>
                   <CardDescription>Detalhes da empresa e membros</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                 <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                     <div>
                       <p className="text-muted-foreground">CNPJ</p>
                       <p className="font-medium text-foreground">{selectedCompany.cnpj || "—"}</p>
@@ -707,7 +737,7 @@ export default function AdminPanelPage() {
                       <p className="font-medium text-foreground">{selectedCompany.phone || "—"}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Cidade/UF</p>
+                      <p className="text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> Cidade/UF</p>
                       <p className="font-medium text-foreground">
                         {[selectedCompany.city, selectedCompany.state].filter(Boolean).join("/") || "—"}
                       </p>
@@ -717,8 +747,16 @@ export default function AdminPanelPage() {
                       {getPlanBadge(selectedCompany.plan_tier)}
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Cadastro</p>
+                      <p className="text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" /> Data Instalação</p>
                       <p className="font-medium text-foreground">{formatDate(selectedCompany.created_at)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground flex items-center gap-1"><Briefcase className="h-3 w-3" /> Funcionários</p>
+                      <p className="font-medium text-foreground">{collaboratorCounts[selectedCompany.id] || 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground flex items-center gap-1"><ClipboardList className="h-3 w-3" /> Serviços Realizados</p>
+                      <p className="font-medium text-foreground">{serviceExecutionCounts[selectedCompany.id] || 0}</p>
                     </div>
                   </div>
 
@@ -807,35 +845,57 @@ export default function AdminPanelPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Usuário</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead className="hidden md:table-cell">Cidade/UF</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead className="hidden md:table-cell">Telefone</TableHead>
+                      <TableHead className="hidden md:table-cell">Funcionários</TableHead>
+                      <TableHead className="hidden md:table-cell">Serviços</TableHead>
                       <TableHead className="hidden md:table-cell">Desde</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredMembers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                           Nenhum usuário encontrado
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredMembers.map((m) => (
-                        <TableRow key={m.id}>
-                          <TableCell>
-                            <p className="font-medium text-foreground">{m.profile?.full_name || "Sem nome"}</p>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{m.role}</Badge>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-muted-foreground">
-                            {m.profile?.phone || "—"}
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
-                            {formatDate(m.created_at)}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      filteredMembers.map((m) => {
+                        const company = companies.find(c => c.id === m.company_id);
+                        return (
+                          <TableRow key={m.id}>
+                            <TableCell>
+                              <p className="font-medium text-foreground">{m.profile?.full_name || "Sem nome"}</p>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <p className="text-sm text-foreground">{company?.name || "—"}</p>
+                                {company && getPlanBadge(company.plan_tier)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-muted-foreground">
+                              {company ? [company.city, company.state].filter(Boolean).join("/") || "—" : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{m.role}</Badge>
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-muted-foreground">
+                              {m.profile?.phone || "—"}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-muted-foreground text-center">
+                              {collaboratorCounts[m.company_id] || 0}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-muted-foreground text-center">
+                              {serviceExecutionCounts[m.company_id] || 0}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                              {formatDate(m.created_at)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
