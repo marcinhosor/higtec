@@ -26,6 +26,20 @@ const isAreaBasedService = (name: string) => {
   return lower === 'tapete' || lower === 'carpete';
 };
 
+const formatQuoteNumber = (num: number, date: string) => {
+  const year = date ? new Date(date + "T00:00").getFullYear() : new Date().getFullYear();
+  return `${String(num).padStart(2, '0')}/${year}`;
+};
+
+const getNextYearlyNumber = (quotes: Quote[]) => {
+  const currentYear = new Date().getFullYear();
+  const thisYearQuotes = quotes.filter(q => {
+    const qYear = q.date ? new Date(q.date + "T00:00").getFullYear() : 0;
+    return qYear === currentYear;
+  });
+  return thisYearQuotes.length > 0 ? Math.max(...thisYearQuotes.map(q => q.number)) + 1 : 1;
+};
+
 export default function QuotesPage() {
   const { user } = useAuth();
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -43,6 +57,10 @@ export default function QuotesPage() {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleQuote, setScheduleQuote] = useState<Quote | null>(null);
   const [scheduleForm, setScheduleForm] = useState({ date: "", time: "", technicianId: "", technicianName: "", observations: "" });
+
+  // Approval prompt state
+  const [approvalPromptOpen, setApprovalPromptOpen] = useState(false);
+  const [approvalQuote, setApprovalQuote] = useState<Quote | null>(null);
   
   // Edit client dialog state
   const [editClientOpen, setEditClientOpen] = useState(false);
@@ -155,7 +173,7 @@ export default function QuotesPage() {
 
     const quote: Quote = {
       id: generateId(),
-      number: db.nextQuoteNumber(),
+      number: getNextYearlyNumber(quotes),
       date: new Date().toISOString().split("T")[0],
       clientId: form.clientId,
       clientName: form.clientName,
@@ -175,7 +193,7 @@ export default function QuotesPage() {
     setQuotes(updated);
     setOpen(false);
     resetForm();
-    toast.success("Orçamento #" + quote.number + " criado!");
+    toast.success("Orçamento " + formatQuoteNumber(quote.number, quote.date) + " criado!");
   };
 
   const resetForm = () => {
@@ -190,7 +208,18 @@ export default function QuotesPage() {
     const updated = quotes.map(q => q.id === id ? { ...q, status } : q);
     db.saveQuotes(updated);
     setQuotes(updated);
-    toast.success(status === "aprovado" ? "Orçamento aprovado!" : "Status atualizado");
+    if (status === "aprovado") {
+      const q = updated.find(q => q.id === id);
+      if (q) {
+        setApprovalQuote(q);
+        setApprovalPromptOpen(true);
+      }
+      toast.success("Orçamento aprovado!");
+    } else if (status === "recusado") {
+      toast.success("Orçamento recusado");
+    } else {
+      toast.success("Status atualizado");
+    }
   };
 
   const removeQuote = (id: string) => {
@@ -241,7 +270,7 @@ export default function QuotesPage() {
 
   const openScheduleDialog = (q: Quote) => {
     setScheduleQuote(q);
-    setScheduleForm({ date: "", time: "", technicianId: "", technicianName: "", observations: `Orçamento #${q.number} - ${q.observations}` });
+    setScheduleForm({ date: "", time: "", technicianId: "", technicianName: "", observations: `Orçamento ${formatQuoteNumber(q.number, q.date)} - ${q.observations}` });
     setScheduleOpen(true);
   };
 
@@ -304,7 +333,7 @@ export default function QuotesPage() {
     const sub = q.services.reduce((s, sv) => s + sv.quantity * sv.unitPrice, 0);
     const disc = q.discountType === "percent" ? sub * (q.discountValue / 100) : q.discountValue;
     const tot = Math.max(0, sub - disc);
-    const text = `*Orçamento #${q.number} - ${company.name}*\n\nCliente: ${q.clientName}\nData: ${new Date(q.date + "T00:00").toLocaleDateString("pt-BR")}\n\nServiços:\n${q.services.map(s => `• ${s.name} - ${s.quantity}x R$ ${s.unitPrice.toFixed(2)} = R$ ${(s.quantity * s.unitPrice).toFixed(2)}`).join("\n")}\n\n${q.discountValue > 0 ? `Desconto: ${q.discountType === "percent" ? q.discountValue + "%" : "R$ " + q.discountValue.toFixed(2)}\n` : ""}*Total: R$ ${tot.toFixed(2)}*\n\nPagamento: ${paymentLabels[q.paymentMethod]}\nPrazo: ${q.executionDeadline}\nValidade: ${q.validityDays} dias`;
+    const text = `*Orçamento ${formatQuoteNumber(q.number, q.date)} - ${company.name}*\n\nCliente: ${q.clientName}\nData: ${new Date(q.date + "T00:00").toLocaleDateString("pt-BR")}\n\nServiços:\n${q.services.map(s => `• ${s.name} - ${s.quantity}x R$ ${s.unitPrice.toFixed(2)} = R$ ${(s.quantity * s.unitPrice).toFixed(2)}`).join("\n")}\n\n${q.discountValue > 0 ? `Desconto: ${q.discountType === "percent" ? q.discountValue + "%" : "R$ " + q.discountValue.toFixed(2)}\n` : ""}*Total: R$ ${tot.toFixed(2)}*\n\nPagamento: ${paymentLabels[q.paymentMethod]}\nPrazo: ${q.executionDeadline}\nValidade: ${q.validityDays} dias`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   };
 
@@ -318,11 +347,13 @@ export default function QuotesPage() {
     pendente: "bg-warning/10 text-warning",
     aprovado: "bg-success/10 text-success",
     recusado: "bg-destructive/10 text-destructive",
+    nao_respondeu: "bg-muted text-muted-foreground",
   };
   const statusLabels: Record<string, string> = {
     pendente: "Pendente",
     aprovado: "Aprovado",
     recusado: "Recusado",
+    nao_respondeu: "Não respondeu",
   };
 
   return (
@@ -533,7 +564,7 @@ export default function QuotesPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-foreground">#{q.number}</h3>
+                    <h3 className="font-bold text-foreground">{formatQuoteNumber(q.number, q.date)}</h3>
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[q.status]}`}>
                       {statusLabels[q.status]}
                     </span>
@@ -562,13 +593,26 @@ export default function QuotesPage() {
                 </Button>
                 {q.status === "pendente" && (
                   <>
-                    <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs text-success" onClick={() => openScheduleDialog(q)}>
-                      <CalendarPlus className="h-3.5 w-3.5" /> Agendar
+                    <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs text-success" onClick={() => updateStatus(q.id, "aprovado")}>
+                      <Check className="h-3.5 w-3.5" /> Aprovado
                     </Button>
                     <Button size="sm" variant="ghost" className="rounded-full gap-1 text-xs text-destructive" onClick={() => updateStatus(q.id, "recusado")}>
-                      <X className="h-3.5 w-3.5" /> Recusar
+                      <X className="h-3.5 w-3.5" /> Recusado
+                    </Button>
+                    <Button size="sm" variant="ghost" className="rounded-full gap-1 text-xs text-muted-foreground" onClick={() => updateStatus(q.id, "nao_respondeu")}>
+                      <Clock className="h-3.5 w-3.5" /> Não respondeu
                     </Button>
                   </>
+                )}
+                {q.status === "aprovado" && (
+                  <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs text-success" onClick={() => openScheduleDialog(q)}>
+                    <CalendarPlus className="h-3.5 w-3.5" /> Agendar
+                  </Button>
+                )}
+                {(q.status === "recusado" || q.status === "nao_respondeu") && (
+                  <Button size="sm" variant="ghost" className="rounded-full gap-1 text-xs" onClick={() => updateStatus(q.id, "pendente")}>
+                    Reabrir
+                  </Button>
                 )}
                 <Button size="sm" variant="outline" className="rounded-full gap-1 text-xs" onClick={() => openEditQuote(q)}>
                   <Edit className="h-3.5 w-3.5" /> Editar
@@ -593,7 +637,7 @@ export default function QuotesPage() {
           {viewQuote && (
             <>
               <DialogHeader>
-                <DialogTitle>Orçamento #{viewQuote.number}</DialogTitle>
+                <DialogTitle>Orçamento {formatQuoteNumber(viewQuote.number, viewQuote.date)}</DialogTitle>
               </DialogHeader>
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -680,7 +724,7 @@ export default function QuotesPage() {
       {/* Edit Quote Dialog */}
       <Dialog open={editQuoteOpen} onOpenChange={o => { setEditQuoteOpen(o); if (!o) setEditingQuote(null); }}>
         <DialogContent className="max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Editar Orçamento #{editingQuote?.number}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Editar Orçamento {editingQuote ? formatQuoteNumber(editingQuote.number, editingQuote.date) : ''}</DialogTitle></DialogHeader>
           {editingQuote && (
             <div className="space-y-3">
               <div className="space-y-2">
@@ -777,6 +821,32 @@ export default function QuotesPage() {
                 </div>
               </div>
               <Button onClick={saveClientEdit} className="w-full rounded-full">Salvar Cliente</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Approval Prompt - Ask to schedule */}
+      <Dialog open={approvalPromptOpen} onOpenChange={setApprovalPromptOpen}>
+        <DialogContent className="max-w-sm mx-4">
+          <DialogHeader><DialogTitle>✅ Orçamento Aprovado!</DialogTitle></DialogHeader>
+          {approvalQuote && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Orçamento {formatQuoteNumber(approvalQuote.number, approvalQuote.date)} para <strong>{approvalQuote.clientName}</strong> foi aprovado.
+              </p>
+              <p className="text-sm font-medium">Deseja agendar o serviço agora?</p>
+              <div className="flex gap-2">
+                <Button className="flex-1 rounded-full gap-1" onClick={() => {
+                  setApprovalPromptOpen(false);
+                  openScheduleDialog(approvalQuote);
+                }}>
+                  <CalendarPlus className="h-4 w-4" /> Sim, agendar
+                </Button>
+                <Button variant="outline" className="flex-1 rounded-full" onClick={() => setApprovalPromptOpen(false)}>
+                  Não, depois
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

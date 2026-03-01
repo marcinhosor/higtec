@@ -117,7 +117,7 @@ export type Quote = {
   validityDays: number;
   discountType: 'percent' | 'fixed';
   discountValue: number;
-  status: 'pendente' | 'aprovado' | 'recusado';
+  status: 'pendente' | 'aprovado' | 'recusado' | 'nao_respondeu';
   createdAt: string;
 };
 
