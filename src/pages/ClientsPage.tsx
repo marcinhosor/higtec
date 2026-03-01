@@ -3,7 +3,7 @@ import PageShell from "@/components/PageShell";
 import { BRAZILIAN_STATES } from "@/lib/storage";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Phone, MapPin, MessageCircle, Trash2, Edit, Search } from "lucide-react";
+import { Plus, Phone, MapPin, MessageCircle, Trash2, Edit, Search, ContactRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -161,6 +161,45 @@ export default function ClientsPage() {
               <DialogTitle>{editing ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
+              {/* Import from contacts button */}
+              {!editing && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full rounded-full gap-2"
+                  onClick={async () => {
+                    if (!("contacts" in navigator && "ContactsManager" in window)) {
+                      toast.error("Seu navegador não suporta acesso à agenda. Use o Chrome no celular.");
+                      return;
+                    }
+                    try {
+                      const contacts = await (navigator as any).contacts.select(
+                        ["name", "tel"],
+                        { multiple: false }
+                      );
+                      if (contacts && contacts.length > 0) {
+                        const c = contacts[0];
+                        const name = c.name?.[0] || "";
+                        const phone = c.tel?.[0] || "";
+                        setForm(prev => ({
+                          ...prev,
+                          name: name || prev.name,
+                          phone: phone ? phone.replace(/\D/g, "").replace(/^55/, "") : prev.phone,
+                        }));
+                        toast.success("Contato importado!");
+                      }
+                    } catch (err: any) {
+                      if (err.name !== "TypeError") {
+                        console.error("Contact picker error:", err);
+                      }
+                    }
+                  }}
+                >
+                  <ContactRound className="h-4 w-4" />
+                  Importar da Agenda
+                </Button>
+              )}
+
               <div><Label>Nome *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
               <div><Label>Telefone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
               
