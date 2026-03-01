@@ -217,6 +217,8 @@ export type Database = {
           id: string
           instagram: string | null
           logo_url: string | null
+          max_desktop_devices: number | null
+          max_mobile_devices: number | null
           name: string
           neighborhood: string | null
           phone: string | null
@@ -250,6 +252,8 @@ export type Database = {
           id?: string
           instagram?: string | null
           logo_url?: string | null
+          max_desktop_devices?: number | null
+          max_mobile_devices?: number | null
           name: string
           neighborhood?: string | null
           phone?: string | null
@@ -283,6 +287,8 @@ export type Database = {
           id?: string
           instagram?: string | null
           logo_url?: string | null
+          max_desktop_devices?: number | null
+          max_mobile_devices?: number | null
           name?: string
           neighborhood?: string | null
           phone?: string | null
@@ -327,6 +333,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "company_memberships_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      device_sessions: {
+        Row: {
+          company_id: string
+          created_at: string
+          device_id: string
+          device_name: string | null
+          device_type: string
+          id: string
+          is_active: boolean
+          last_active_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          device_id: string
+          device_name?: string | null
+          device_type?: string
+          id?: string
+          is_active?: boolean
+          last_active_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          device_id?: string
+          device_name?: string | null
+          device_type?: string
+          id?: string
+          is_active?: boolean
+          last_active_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_sessions_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"

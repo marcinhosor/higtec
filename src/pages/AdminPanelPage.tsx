@@ -15,6 +15,7 @@ import {
   Users, Building2, Search, RefreshCw, Crown, Eye, Lock, KeyRound, Save,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Smartphone, Monitor } from "lucide-react";
 
 interface CompanyRow {
   id: string;
@@ -723,6 +724,48 @@ export default function AdminPanelPage() {
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  {/* Device Limit Override */}
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                      <Monitor className="h-4 w-4" /> Limites de Dispositivos
+                    </h4>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Deixe vazio para usar o padrão do plano. Preencha para liberar dispositivos extras para esta empresa.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground flex items-center gap-1"><Monitor className="h-3 w-3" /> Max Computadores</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="Padrão do plano"
+                          defaultValue={(selectedCompany as any)?.max_desktop_devices || ""}
+                          onChange={async (e) => {
+                            const val = parseInt(e.target.value) || null;
+                            await supabase.from("companies").update({ max_desktop_devices: val } as any).eq("id", selectedCompany.id);
+                            setCompanies(prev => prev.map(c => c.id === selectedCompany.id ? { ...c, max_desktop_devices: val } as any : c));
+                          }}
+                          className="h-8"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground flex items-center gap-1"><Smartphone className="h-3 w-3" /> Max Celulares</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="Padrão do plano"
+                          defaultValue={(selectedCompany as any)?.max_mobile_devices || ""}
+                          onChange={async (e) => {
+                            const val = parseInt(e.target.value) || null;
+                            await supabase.from("companies").update({ max_mobile_devices: val } as any).eq("id", selectedCompany.id);
+                            setCompanies(prev => prev.map(c => c.id === selectedCompany.id ? { ...c, max_mobile_devices: val } as any : c));
+                          }}
+                          className="h-8"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
