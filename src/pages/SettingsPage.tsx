@@ -11,13 +11,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil, Key, Copy, Shield, Car, Monitor, Smartphone } from "lucide-react";
+import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil, Key, Copy, Shield, Car, Monitor, Smartphone, Database, FileText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import ThemeSelector from "@/components/ThemeSelector";
 import CsvImporter from "@/components/CsvImporter";
 import { FileSpreadsheet } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
+
+type SettingsTab = "empresa" | "equipe" | "servicos" | "pagamento" | "veiculos" | "dispositivos" | "dados";
 
 const pixTypeLabels: Record<PixKey['type'], string> = {
   cpf: 'CPF',
@@ -33,6 +35,7 @@ export default function SettingsPage() {
   const { setTheme, setCustomTheme, refresh: refreshTheme } = useTheme();
   const { user } = useAuth();
 
+  const [activeTab, setActiveTab] = useState<SettingsTab>("empresa");
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [company, setCompany] = useState<CompanyInfo>(() => {
     const c = db.getCompany();
@@ -434,165 +437,379 @@ export default function SettingsPage() {
     );
   }
 
+  const settingsTabs: { id: SettingsTab; label: string; icon: React.ReactNode; show: boolean }[] = [
+    { id: "empresa", label: "Empresa", icon: <Building2 className="h-4 w-4" />, show: true },
+    { id: "equipe", label: "Equipe", icon: <Users className="h-4 w-4" />, show: true },
+    { id: "servicos", label: "Serviços", icon: <Wrench className="h-4 w-4" />, show: true },
+    { id: "pagamento", label: "Pagamento", icon: <CreditCard className="h-4 w-4" />, show: !!company.isPro },
+    { id: "veiculos", label: "Veículos", icon: <Car className="h-4 w-4" />, show: dbPlanTier === 'premium' },
+    { id: "dispositivos", label: "Dispositivos", icon: <Monitor className="h-4 w-4" />, show: (dbPlanTier === 'pro' || dbPlanTier === 'premium') },
+    { id: "dados", label: "Dados", icon: <Database className="h-4 w-4" />, show: true },
+  ];
+
   return (
     <PageShell title="Configurações" showBack>
+      {/* Sticky Tab Navigation */}
+      <div className="sticky top-[57px] z-30 -mx-4 bg-background/95 backdrop-blur-md border-b border-border mb-4">
+        <div className="flex overflow-x-auto no-scrollbar px-2 py-2 gap-1">
+          {settingsTabs.filter(t => t.show).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+                activeTab === tab.id
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mx-auto max-w-md space-y-6">
-        {/* Plan Tier */}
-        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-              <Crown className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-foreground">Plano da Conta</h2>
-              <p className="text-xs text-muted-foreground">Gerencie sua assinatura</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-bold">
-              {dbPlanTier === 'free' && '🆓 FREE'}
-              {dbPlanTier === 'pro' && '⭐ PRO'}
-              {dbPlanTier === 'premium' && '👑 PREMIUM'}
-            </span>
-            {isTrialActive && (
-              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                Trial — {trialDaysRemaining} dias restantes
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            {dbPlanTier === 'free' && 'Funcionalidades básicas. Sem personalização visual ou relatórios avançados.'}
-            {dbPlanTier === 'pro' && 'Personalização visual, relatórios avançados, estoque integrado e PDF profissional.'}
-            {dbPlanTier === 'premium' && 'Tudo do PRO + Dashboard estratégico, manutenção de equipamentos, gráficos e ranking.'}
-          </p>
-          {dbPlanTier === 'free' && !isTrialActive && (
-            <Button onClick={() => navigate('/checkout')} className="mt-3 w-full" size="sm">
-              <Crown className="mr-2 h-4 w-4" /> Fazer upgrade
-            </Button>
-          )}
-        </div>
-
-        {/* Theme Selector */}
-        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
-          <ThemeSelector
-            selectedId={company.selectedThemeId}
-            onSelect={handleThemeSelect}
-            canChange={dbIsPro}
-            isPro={dbPlanTier === 'pro'}
-            isPremium={dbPlanTier === 'premium'}
-            customTheme={company.customTheme || DEFAULT_CUSTOM_THEME}
-            onCustomTheme={(ct) => {
-              setCustomTheme(ct);
-              setCompany(prev => ({ ...prev, selectedThemeId: 'custom', customTheme: ct }));
-              if (companyId) {
-                supabase.from("companies").update({ selected_theme_id: 'custom', custom_theme: ct } as any).eq("id", companyId).then();
-              }
-              toast.success("Personalização aplicada!");
-            }}
-          />
-        </div>
-
-        {/* Company Info */}
-        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
-              <Building2 className="h-5 w-5 text-primary" />
-            </div>
-            <h2 className="font-semibold text-foreground">Dados da Empresa</h2>
-          </div>
-          <div className="space-y-3">
-            <div><Label>Nome da Empresa</Label><Input value={company.name} onChange={e => setCompany({ ...company, name: e.target.value })} /></div>
-            <div><Label>Telefone</Label><Input value={company.phone} onChange={e => setCompany({ ...company, phone: e.target.value })} /></div>
-            <div><Label>CNPJ (opcional)</Label><Input value={company.cnpj} onChange={e => setCompany({ ...company, cnpj: e.target.value })} /></div>
-
-            {company.isPro && (
-              <>
-                <div><Label>Endereço</Label><Input value={company.address} onChange={e => setCompany({ ...company, address: e.target.value })} /></div>
-                <div><Label>Instagram</Label><Input value={company.instagram} onChange={e => setCompany({ ...company, instagram: e.target.value })} placeholder="@seuinstagram" /></div>
-                <div>
-                  <Label>Logo da Empresa</Label>
-                  <div className="flex items-center gap-3 mt-1">
-                    {company.logo && <img src={company.logo} alt="Logo" className="h-12 w-12 rounded-lg object-contain border" />}
-                    <label className="flex items-center gap-2 cursor-pointer rounded-full border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent">
-                      <ImagePlus className="h-4 w-4" /> {company.logo ? "Trocar" : "Upload"}
-                      <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-                    </label>
-                  </div>
+        {/* ===== TAB: EMPRESA ===== */}
+        {activeTab === "empresa" && (
+          <>
+            {/* Plan Tier */}
+            <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                  <Crown className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <Label>Assinatura (imagem)</Label>
-                  <div className="flex items-center gap-3 mt-1">
-                    {company.signature && <img src={company.signature} alt="Assinatura" className="h-10 rounded-lg object-contain border" />}
-                    <label className="flex items-center gap-2 cursor-pointer rounded-full border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent">
-                      <ImagePlus className="h-4 w-4" /> {company.signature ? "Trocar" : "Upload"}
-                      <input type="file" accept="image/*" className="hidden" onChange={handleSignatureUpload} />
-                    </label>
-                  </div>
+                  <h2 className="font-semibold text-foreground">Plano da Conta</h2>
+                  <p className="text-xs text-muted-foreground">Gerencie sua assinatura</p>
                 </div>
-              </>
-            )}
-            <Button onClick={saveCompany} className="w-full rounded-full gap-2"><Save className="h-4 w-4" /> Salvar</Button>
-          </div>
-        </div>
-
-        {/* Collaborators */}
-        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
-                <Users className="h-5 w-5 text-primary" />
               </div>
-              <h2 className="font-semibold text-foreground">Colaboradores</h2>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold">
+                  {dbPlanTier === 'free' && '🆓 FREE'}
+                  {dbPlanTier === 'pro' && '⭐ PRO'}
+                  {dbPlanTier === 'premium' && '👑 PREMIUM'}
+                </span>
+                {isTrialActive && (
+                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                    Trial — {trialDaysRemaining} dias restantes
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {dbPlanTier === 'free' && 'Funcionalidades básicas. Sem personalização visual ou relatórios avançados.'}
+                {dbPlanTier === 'pro' && 'Personalização visual, relatórios avançados, estoque integrado e PDF profissional.'}
+                {dbPlanTier === 'premium' && 'Tudo do PRO + Dashboard estratégico, manutenção de equipamentos, gráficos e ranking.'}
+              </p>
+              {dbPlanTier === 'free' && !isTrialActive && (
+                <Button onClick={() => navigate('/checkout')} className="mt-3 w-full" size="sm">
+                  <Crown className="mr-2 h-4 w-4" /> Fazer upgrade
+                </Button>
+              )}
             </div>
-            <Dialog open={collabOpen} onOpenChange={o => { setCollabOpen(o); if (!o) { setEditingCollab(null); setCollabForm({ name: "", role: "", phone: "" }); } }}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md mx-4 max-h-[85vh] overflow-y-auto">
-                <DialogHeader><DialogTitle>{editingCollab ? "Editar Colaborador" : "Novo Colaborador"}</DialogTitle></DialogHeader>
-                <div className="space-y-3">
-                  <div><Label>Nome Completo *</Label><Input value={collabForm.name} onChange={e => setCollabForm({...collabForm, name: e.target.value})} /></div>
-                  <div><Label>Cargo</Label><Input value={collabForm.role} onChange={e => setCollabForm({...collabForm, role: e.target.value})} placeholder="Técnico, Auxiliar..." /></div>
-                  <div><Label>Telefone</Label><Input value={collabForm.phone} onChange={e => setCollabForm({...collabForm, phone: e.target.value})} /></div>
-                  <Button onClick={saveCollaborator} className="w-full rounded-full">Salvar</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
 
-          {collaborators.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">Nenhum colaborador cadastrado</p>
-          ) : (
-            <div className="space-y-2">
-              {collaborators.map(c => (
-                <div key={c.id} className={`rounded-lg border p-3 flex items-center justify-between ${c.status === 'inativo' ? 'opacity-50' : ''}`}>
-                  <div>
-                    <p className="font-medium text-foreground text-sm">{c.name}</p>
-                    <p className="text-xs text-muted-foreground">{c.role || "Sem cargo"} {c.phone && `• ${c.phone}`} • {c.status === 'ativo' ? '✅ Ativo' : '⛔ Inativo'}</p>
+            {/* Theme Selector */}
+            <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+              <ThemeSelector
+                selectedId={company.selectedThemeId}
+                onSelect={handleThemeSelect}
+                canChange={dbIsPro}
+                isPro={dbPlanTier === 'pro'}
+                isPremium={dbPlanTier === 'premium'}
+                customTheme={company.customTheme || DEFAULT_CUSTOM_THEME}
+                onCustomTheme={(ct) => {
+                  setCustomTheme(ct);
+                  setCompany(prev => ({ ...prev, selectedThemeId: 'custom', customTheme: ct }));
+                  if (companyId) {
+                    supabase.from("companies").update({ selected_theme_id: 'custom', custom_theme: ct } as any).eq("id", companyId).then();
+                  }
+                  toast.success("Personalização aplicada!");
+                }}
+              />
+            </div>
+
+            {/* Company Info */}
+            <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </div>
+                <h2 className="font-semibold text-foreground">Dados da Empresa</h2>
+              </div>
+              <div className="space-y-3">
+                <div><Label>Nome da Empresa</Label><Input value={company.name} onChange={e => setCompany({ ...company, name: e.target.value })} /></div>
+                <div><Label>Telefone</Label><Input value={company.phone} onChange={e => setCompany({ ...company, phone: e.target.value })} /></div>
+                <div><Label>CNPJ (opcional)</Label><Input value={company.cnpj} onChange={e => setCompany({ ...company, cnpj: e.target.value })} /></div>
+
+                {company.isPro && (
+                  <>
+                    <div><Label>Endereço</Label><Input value={company.address} onChange={e => setCompany({ ...company, address: e.target.value })} /></div>
+                    <div><Label>Instagram</Label><Input value={company.instagram} onChange={e => setCompany({ ...company, instagram: e.target.value })} placeholder="@seuinstagram" /></div>
+                    <div>
+                      <Label>Logo da Empresa</Label>
+                      <div className="flex items-center gap-3 mt-1">
+                        {company.logo && <img src={company.logo} alt="Logo" className="h-12 w-12 rounded-lg object-contain border" />}
+                        <label className="flex items-center gap-2 cursor-pointer rounded-full border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent">
+                          <ImagePlus className="h-4 w-4" /> {company.logo ? "Trocar" : "Upload"}
+                          <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Assinatura (imagem)</Label>
+                      <div className="flex items-center gap-3 mt-1">
+                        {company.signature && <img src={company.signature} alt="Assinatura" className="h-10 rounded-lg object-contain border" />}
+                        <label className="flex items-center gap-2 cursor-pointer rounded-full border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent">
+                          <ImagePlus className="h-4 w-4" /> {company.signature ? "Trocar" : "Upload"}
+                          <input type="file" accept="image/*" className="hidden" onChange={handleSignatureUpload} />
+                        </label>
+                      </div>
+                    </div>
+                  </>
+                )}
+                <Button onClick={saveCompany} className="w-full rounded-full gap-2"><Save className="h-4 w-4" /> Salvar</Button>
+              </div>
+            </div>
+
+            {/* Proposal text settings (PRO) */}
+            {company.isPro && (
+              <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                    <FileText className="h-5 w-5 text-primary" />
                   </div>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
-                      setCollabForm({ name: c.name, role: c.role || '', phone: c.phone || '' });
-                      setEditingCollab(c);
-                      setCollabOpen(true);
-                    }}>
-                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="font-semibold text-foreground">Textos da Proposta Comercial</h2>
+                </div>
+                <div className="space-y-3">
+                  <div><Label>Apresentação da Empresa</Label><Textarea value={company.companyDescription} onChange={e => setCompany({ ...company, companyDescription: e.target.value })} placeholder="Descreva sua empresa..." rows={3} /></div>
+                  <div><Label>Diferenciais</Label><Textarea value={company.differentials} onChange={e => setCompany({ ...company, differentials: e.target.value })} placeholder="Liste seus diferenciais..." rows={3} /></div>
+                  <div><Label>Garantia do Serviço</Label><Textarea value={company.serviceGuarantee} onChange={e => setCompany({ ...company, serviceGuarantee: e.target.value })} placeholder="Descreva a garantia..." rows={2} /></div>
+                  <div><Label>Método de Execução</Label><Textarea value={company.executionMethod} onChange={e => setCompany({ ...company, executionMethod: e.target.value })} placeholder="Descreva o método..." rows={2} /></div>
+                  <div><Label>Recomendação Técnica</Label><Textarea value={company.technicalRecommendation} onChange={e => setCompany({ ...company, technicalRecommendation: e.target.value })} placeholder="Recomendações ao cliente..." rows={2} /></div>
+                  <Button onClick={saveCompany} className="w-full rounded-full gap-2"><Save className="h-4 w-4" /> Salvar Textos</Button>
+                </div>
+              </div>
+            )}
+
+            {!company.isPro && (
+              <div className="rounded-xl bg-muted/50 p-4 text-center animate-fade-in">
+                <p className="text-sm text-muted-foreground">💳 Personalização empresarial e dados de pagamento disponíveis na <span className="font-medium text-primary">versão PRO</span></p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ===== TAB: EQUIPE ===== */}
+        {activeTab === "equipe" && (
+          <>
+            {/* Collaborators */}
+            <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                    <Users className="h-5 w-5 text-primary" />
+                  </div>
+                  <h2 className="font-semibold text-foreground">Colaboradores</h2>
+                </div>
+                <Dialog open={collabOpen} onOpenChange={o => { setCollabOpen(o); if (!o) { setEditingCollab(null); setCollabForm({ name: "", role: "", phone: "" }); } }}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md mx-4 max-h-[85vh] overflow-y-auto">
+                    <DialogHeader><DialogTitle>{editingCollab ? "Editar Colaborador" : "Novo Colaborador"}</DialogTitle></DialogHeader>
+                    <div className="space-y-3">
+                      <div><Label>Nome Completo *</Label><Input value={collabForm.name} onChange={e => setCollabForm({...collabForm, name: e.target.value})} /></div>
+                      <div><Label>Cargo</Label><Input value={collabForm.role} onChange={e => setCollabForm({...collabForm, role: e.target.value})} placeholder="Técnico, Auxiliar..." /></div>
+                      <div><Label>Telefone</Label><Input value={collabForm.phone} onChange={e => setCollabForm({...collabForm, phone: e.target.value})} /></div>
+                      <Button onClick={saveCollaborator} className="w-full rounded-full">Salvar</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              {collaborators.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum colaborador cadastrado</p>
+              ) : (
+                <div className="space-y-2">
+                  {collaborators.map(c => (
+                    <div key={c.id} className={`rounded-lg border p-3 flex items-center justify-between ${c.status === 'inativo' ? 'opacity-50' : ''}`}>
+                      <div>
+                        <p className="font-medium text-foreground text-sm">{c.name}</p>
+                        <p className="text-xs text-muted-foreground">{c.role || "Sem cargo"} {c.phone && `• ${c.phone}`} • {c.status === 'ativo' ? '✅ Ativo' : '⛔ Inativo'}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
+                          setCollabForm({ name: c.name, role: c.role || '', phone: c.phone || '' });
+                          setEditingCollab(c);
+                          setCollabOpen(true);
+                        }}>
+                          <Pencil className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleCollabStatus(c.id, c.status)} title={c.status === 'ativo' ? 'Desativar' : 'Ativar'}>
+                          {c.status === 'ativo' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeCollaborator(c.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Technician Management */}
+            <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                    <Shield className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-foreground">Técnicos</h2>
+                    <p className="text-xs text-muted-foreground">Acesso restrito ao app</p>
+                  </div>
+                </div>
+                <Dialog open={techOpen} onOpenChange={o => { setTechOpen(o); if (!o) { setEditingTech(null); setTechForm({ name: "", email: "", phone: "", pin: "" }); } }}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md mx-4">
+                    <DialogHeader><DialogTitle>{editingTech ? "Editar Técnico" : "Novo Técnico"}</DialogTitle></DialogHeader>
+                    <div className="space-y-3">
+                      <div><Label>Nome Completo *</Label><Input value={techForm.name} onChange={e => setTechForm({...techForm, name: e.target.value})} placeholder="Nome do técnico" /></div>
+                      <div><Label>E-mail (opcional)</Label><Input type="email" value={techForm.email} onChange={e => setTechForm({...techForm, email: e.target.value})} placeholder="email@exemplo.com" /></div>
+                      <div><Label>Telefone (opcional)</Label><Input value={techForm.phone} onChange={e => setTechForm({...techForm, phone: e.target.value})} placeholder="(00) 00000-0000" /></div>
+                      <div>
+                        <Label>PIN de Acesso (4 dígitos) *</Label>
+                        <Input
+                          type="text"
+                          value={techForm.pin}
+                          onChange={e => setTechForm({...techForm, pin: e.target.value.replace(/\D/g, "").slice(0, 4)})}
+                          placeholder="0000"
+                          maxLength={4}
+                          inputMode="numeric"
+                          className="text-center text-lg tracking-widest font-mono"
+                        />
+                      </div>
+                      <Button onClick={saveTechnician} className="w-full rounded-full">{editingTech ? "Atualizar" : "Cadastrar"}</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              {/* Access Code */}
+              {accessCode && (
+                <div className="rounded-lg bg-accent/50 p-3 mb-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Código de Acesso da Empresa</p>
+                    <p className="text-lg font-bold font-mono tracking-widest text-primary">{accessCode}</p>
+                    <p className="text-xs text-muted-foreground">Compartilhe com seus técnicos para login</p>
+                  </div>
+                  <Button variant="outline" size="icon" className="h-9 w-9" onClick={copyAccessCode}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+
+              {technicians.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum técnico cadastrado. Cadastre técnicos para que acessem o app com funcionalidades restritas.</p>
+              ) : (
+                <div className="space-y-2">
+                  {technicians.map(t => (
+                    <div key={t.id} className={`rounded-lg border p-3 flex items-center justify-between ${t.status === 'inactive' ? 'opacity-50' : ''}`}>
+                      <div>
+                        <p className="font-medium text-foreground text-sm">{t.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.email && `${t.email} • `}{t.phone && `${t.phone} • `}
+                          {t.status === 'active' ? '✅ Ativo' : '⛔ Inativo'}
+                        </p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
+                          setTechForm({ name: t.name, email: t.email || "", phone: t.phone || "", pin: t.pin });
+                          setEditingTech(t);
+                          setTechOpen(true);
+                        }}>
+                          <Pencil className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleTechStatus(t.id, t.status)}>
+                          {t.status === 'active' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeTechnician(t.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ===== TAB: SERVIÇOS ===== */}
+        {activeTab === "servicos" && (
+          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                <Wrench className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="font-semibold text-foreground">Tipos de Serviço</h2>
+            </div>
+
+            {/* Add/Edit form */}
+            <div className="space-y-2 mb-4 rounded-lg border p-3">
+              <p className="text-xs font-medium text-muted-foreground">{editingST ? '✏️ Editando serviço' : '➕ Novo serviço'}</p>
+              <Input value={stForm.name} onChange={e => setStForm({ ...stForm, name: e.target.value })} placeholder="Nome do serviço" className="h-9" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-xs text-muted-foreground">Valor padrão (R$)</span>
+                  <Input type="number" min={0} step="0.01" value={stForm.defaultPrice || ""} onChange={e => setStForm({ ...stForm, defaultPrice: parseFloat(e.target.value) || 0 })} className="h-9" />
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground">Tempo (min)</span>
+                  <Input type="number" min={0} value={stForm.estimatedMinutes || ""} onChange={e => setStForm({ ...stForm, estimatedMinutes: parseInt(e.target.value) || 0 })} className="h-9" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={saveServiceType} size="sm" className="rounded-full flex-1">{editingST ? 'Atualizar' : 'Adicionar'}</Button>
+                {editingST && <Button onClick={() => { setEditingST(null); setStForm({ name: "", defaultPrice: 0, estimatedMinutes: 60 }); }} size="sm" variant="outline" className="rounded-full">Cancelar</Button>}
+              </div>
+            </div>
+
+            {/* List */}
+            <div className="space-y-1.5">
+              {serviceTypes.map(st => (
+                <div key={st.id} className={`flex items-center justify-between rounded-lg border p-2.5 text-sm ${!st.is_active ? 'opacity-50' : ''}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground truncate">{st.name} {!st.is_active && <span className="text-xs text-muted-foreground">(inativo)</span>}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(st.default_price || 0) > 0 ? `R$ ${(st.default_price || 0).toFixed(2)}` : 'Sem valor padrão'}
+                      {(st.estimated_minutes || 0) > 0 && ` • ${st.estimated_minutes}min`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    {company.isPro && (
+                      <>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, -1)}><ArrowUp className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, 1)}><ArrowDown className="h-3 w-3" /></Button>
+                      </>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleServiceType(st.id, st.is_active !== false)} title={st.is_active !== false ? 'Desativar' : 'Ativar'}>
+                      {st.is_active !== false ? <UserX className="h-3 w-3 text-warning" /> : <UserCheck className="h-3 w-3 text-success" />}
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleCollabStatus(c.id, c.status)} title={c.status === 'ativo' ? 'Desativar' : 'Ativar'}>
-                      {c.status === 'ativo' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeCollaborator(c.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditST(st)}><Pencil className="h-3 w-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeServiceType(st.id)}><Trash2 className="h-3 w-3" /></Button>
                   </div>
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Payment Data (PRO) */}
-        {company.isPro && (
+        {/* ===== TAB: PAGAMENTO ===== */}
+        {activeTab === "pagamento" && company.isPro && (
           <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
             <div className="flex items-center gap-3 mb-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
@@ -659,212 +876,8 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {!company.isPro && (
-          <div className="rounded-xl bg-muted/50 p-4 text-center animate-fade-in">
-            <p className="text-sm text-muted-foreground">💳 Personalização empresarial e dados de pagamento disponíveis na <span className="font-medium text-primary">versão PRO</span></p>
-          </div>
-        )}
-
-        {/* Service Types */}
-        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
-              <Wrench className="h-5 w-5 text-primary" />
-            </div>
-            <h2 className="font-semibold text-foreground">Tipos de Serviço</h2>
-          </div>
-
-          {/* Add/Edit form */}
-          <div className="space-y-2 mb-4 rounded-lg border p-3">
-            <p className="text-xs font-medium text-muted-foreground">{editingST ? '✏️ Editando serviço' : '➕ Novo serviço'}</p>
-            <Input value={stForm.name} onChange={e => setStForm({ ...stForm, name: e.target.value })} placeholder="Nome do serviço" className="h-9" />
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-xs text-muted-foreground">Valor padrão (R$)</span>
-                <Input type="number" min={0} step="0.01" value={stForm.defaultPrice || ""} onChange={e => setStForm({ ...stForm, defaultPrice: parseFloat(e.target.value) || 0 })} className="h-9" />
-              </div>
-              <div>
-                <span className="text-xs text-muted-foreground">Tempo (min)</span>
-                <Input type="number" min={0} value={stForm.estimatedMinutes || ""} onChange={e => setStForm({ ...stForm, estimatedMinutes: parseInt(e.target.value) || 0 })} className="h-9" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={saveServiceType} size="sm" className="rounded-full flex-1">{editingST ? 'Atualizar' : 'Adicionar'}</Button>
-              {editingST && <Button onClick={() => { setEditingST(null); setStForm({ name: "", defaultPrice: 0, estimatedMinutes: 60 }); }} size="sm" variant="outline" className="rounded-full">Cancelar</Button>}
-            </div>
-          </div>
-
-          {/* List */}
-          <div className="space-y-1.5">
-            {serviceTypes.map(st => (
-              <div key={st.id} className={`flex items-center justify-between rounded-lg border p-2.5 text-sm ${!st.is_active ? 'opacity-50' : ''}`}>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-foreground truncate">{st.name} {!st.is_active && <span className="text-xs text-muted-foreground">(inativo)</span>}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(st.default_price || 0) > 0 ? `R$ ${(st.default_price || 0).toFixed(2)}` : 'Sem valor padrão'}
-                    {(st.estimated_minutes || 0) > 0 && ` • ${st.estimated_minutes}min`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-0.5">
-                  {company.isPro && (
-                    <>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, -1)}><ArrowUp className="h-3 w-3" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveServiceType(st.id, 1)}><ArrowDown className="h-3 w-3" /></Button>
-                    </>
-                  )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleServiceType(st.id, st.is_active !== false)} title={st.is_active !== false ? 'Desativar' : 'Ativar'}>
-                    {st.is_active !== false ? <UserX className="h-3 w-3 text-warning" /> : <UserCheck className="h-3 w-3 text-success" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditST(st)}><Pencil className="h-3 w-3" /></Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeServiceType(st.id)}><Trash2 className="h-3 w-3" /></Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Proposal text settings (PRO) */}
-        {company.isPro && (
-          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
-            <h2 className="font-semibold text-foreground mb-4">Textos da Proposta Comercial</h2>
-            <div className="space-y-3">
-              <div><Label>Apresentação da Empresa</Label><Textarea value={company.companyDescription} onChange={e => setCompany({ ...company, companyDescription: e.target.value })} placeholder="Descreva sua empresa..." rows={3} /></div>
-              <div><Label>Diferenciais</Label><Textarea value={company.differentials} onChange={e => setCompany({ ...company, differentials: e.target.value })} placeholder="Liste seus diferenciais..." rows={3} /></div>
-              <div><Label>Garantia do Serviço</Label><Textarea value={company.serviceGuarantee} onChange={e => setCompany({ ...company, serviceGuarantee: e.target.value })} placeholder="Descreva a garantia..." rows={2} /></div>
-              <div><Label>Método de Execução</Label><Textarea value={company.executionMethod} onChange={e => setCompany({ ...company, executionMethod: e.target.value })} placeholder="Descreva o método..." rows={2} /></div>
-              <div><Label>Recomendação Técnica</Label><Textarea value={company.technicalRecommendation} onChange={e => setCompany({ ...company, technicalRecommendation: e.target.value })} placeholder="Recomendações ao cliente..." rows={2} /></div>
-              <Button onClick={saveCompany} className="w-full rounded-full gap-2"><Save className="h-4 w-4" /> Salvar Textos</Button>
-            </div>
-          </div>
-        )}
-
-        {/* Technician Management */}
-        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                <Shield className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-foreground">Técnicos</h2>
-                <p className="text-xs text-muted-foreground">Acesso restrito ao app</p>
-              </div>
-            </div>
-            <Dialog open={techOpen} onOpenChange={o => { setTechOpen(o); if (!o) { setEditingTech(null); setTechForm({ name: "", email: "", phone: "", pin: "" }); } }}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md mx-4">
-                <DialogHeader><DialogTitle>{editingTech ? "Editar Técnico" : "Novo Técnico"}</DialogTitle></DialogHeader>
-                <div className="space-y-3">
-                  <div><Label>Nome Completo *</Label><Input value={techForm.name} onChange={e => setTechForm({...techForm, name: e.target.value})} placeholder="Nome do técnico" /></div>
-                  <div><Label>E-mail (opcional)</Label><Input type="email" value={techForm.email} onChange={e => setTechForm({...techForm, email: e.target.value})} placeholder="email@exemplo.com" /></div>
-                  <div><Label>Telefone (opcional)</Label><Input value={techForm.phone} onChange={e => setTechForm({...techForm, phone: e.target.value})} placeholder="(00) 00000-0000" /></div>
-                  <div>
-                    <Label>PIN de Acesso (4 dígitos) *</Label>
-                    <Input
-                      type="text"
-                      value={techForm.pin}
-                      onChange={e => setTechForm({...techForm, pin: e.target.value.replace(/\D/g, "").slice(0, 4)})}
-                      placeholder="0000"
-                      maxLength={4}
-                      inputMode="numeric"
-                      className="text-center text-lg tracking-widest font-mono"
-                    />
-                  </div>
-                  <Button onClick={saveTechnician} className="w-full rounded-full">{editingTech ? "Atualizar" : "Cadastrar"}</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          {/* Access Code */}
-          {accessCode && (
-            <div className="rounded-lg bg-accent/50 p-3 mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Código de Acesso da Empresa</p>
-                <p className="text-lg font-bold font-mono tracking-widest text-primary">{accessCode}</p>
-                <p className="text-xs text-muted-foreground">Compartilhe com seus técnicos para login</p>
-              </div>
-              <Button variant="outline" size="icon" className="h-9 w-9" onClick={copyAccessCode}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-
-          {technicians.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">Nenhum técnico cadastrado. Cadastre técnicos para que acessem o app com funcionalidades restritas.</p>
-          ) : (
-            <div className="space-y-2">
-              {technicians.map(t => (
-                <div key={t.id} className={`rounded-lg border p-3 flex items-center justify-between ${t.status === 'inactive' ? 'opacity-50' : ''}`}>
-                  <div>
-                    <p className="font-medium text-foreground text-sm">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {t.email && `${t.email} • `}{t.phone && `${t.phone} • `}
-                      {t.status === 'active' ? '✅ Ativo' : '⛔ Inativo'}
-                    </p>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
-                      setTechForm({ name: t.name, email: t.email || "", phone: t.phone || "", pin: t.pin });
-                      setEditingTech(t);
-                      setTechOpen(true);
-                    }}>
-                      <Pencil className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleTechStatus(t.id, t.status)}>
-                      {t.status === 'active' ? <UserX className="h-4 w-4 text-warning" /> : <UserCheck className="h-4 w-4 text-success" />}
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeTechnician(t.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Device Sessions */}
-        {(dbPlanTier === 'pro' || dbPlanTier === 'premium') && deviceSessions.length > 0 && (
-          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
-                <Monitor className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-foreground">Dispositivos Ativos</h2>
-                <p className="text-xs text-muted-foreground">
-                  {dbPlanTier === 'pro' ? '1 PC + 2 celulares' : '1 PC + 9 celulares'}
-                </p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {deviceSessions.map(d => (
-                <div key={d.id} className="rounded-lg border p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {d.device_type === 'desktop'
-                      ? <Monitor className="h-4 w-4 text-muted-foreground" />
-                      : <Smartphone className="h-4 w-4 text-muted-foreground" />}
-                    <div>
-                      <p className="font-medium text-foreground text-sm">{d.device_name || d.device_type}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Último acesso: {new Date(d.last_active_at).toLocaleDateString("pt-BR")}
-                      </p>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => revokeDevice(d.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Vehicles (Premium) */}
-        {dbPlanTier === 'premium' && (
+        {/* ===== TAB: VEÍCULOS ===== */}
+        {activeTab === "veiculos" && dbPlanTier === 'premium' && (
           <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -950,35 +963,81 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* CSV Import - PRO */}
-        {dbIsPro && companyId && (
-          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
+        {/* ===== TAB: DISPOSITIVOS ===== */}
+        {activeTab === "dispositivos" && (dbPlanTier === 'pro' || dbPlanTier === 'premium') && (
+          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                <FileSpreadsheet className="h-5 w-5 text-primary" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
+                <Monitor className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <h2 className="font-semibold text-foreground">Importar CSV</h2>
-                <p className="text-xs text-muted-foreground">Migre dados de outras ferramentas</p>
+                <h2 className="font-semibold text-foreground">Dispositivos Ativos</h2>
+                <p className="text-xs text-muted-foreground">
+                  {dbPlanTier === 'pro' ? '1 PC + 2 celulares' : '1 PC + 9 celulares'}
+                </p>
               </div>
             </div>
-            <CsvImporter companyId={companyId} />
+            {deviceSessions.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Nenhum dispositivo ativo no momento</p>
+            ) : (
+              <div className="space-y-2">
+                {deviceSessions.map(d => (
+                  <div key={d.id} className="rounded-lg border p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {d.device_type === 'desktop'
+                        ? <Monitor className="h-4 w-4 text-muted-foreground" />
+                        : <Smartphone className="h-4 w-4 text-muted-foreground" />}
+                      <div>
+                        <p className="font-medium text-foreground text-sm">{d.device_name || d.device_type}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Último acesso: {new Date(d.last_active_at).toLocaleDateString("pt-BR")}
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => revokeDevice(d.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Backup */}
-        <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
-          <h2 className="font-semibold text-foreground mb-4">Backup de Dados</h2>
-          <div className="flex gap-3">
-            <Button onClick={exportBackup} variant="outline" className="flex-1 rounded-full gap-2">
-              <Download className="h-4 w-4" /> Exportar
-            </Button>
-            <Button onClick={importBackup} variant="outline" className="flex-1 rounded-full gap-2">
-              <Upload className="h-4 w-4" /> Restaurar
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-3">O backup inclui todos os clientes, agendamentos, produtos, orçamentos, colaboradores e configurações.</p>
-        </div>
+        {/* ===== TAB: DADOS ===== */}
+        {activeTab === "dados" && (
+          <>
+            {/* CSV Import - PRO */}
+            {dbIsPro && companyId && (
+              <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                    <FileSpreadsheet className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-foreground">Importar CSV</h2>
+                    <p className="text-xs text-muted-foreground">Migre dados de outras ferramentas</p>
+                  </div>
+                </div>
+                <CsvImporter companyId={companyId} />
+              </div>
+            )}
+
+            {/* Backup */}
+            <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
+              <h2 className="font-semibold text-foreground mb-4">Backup de Dados</h2>
+              <div className="flex gap-3">
+                <Button onClick={exportBackup} variant="outline" className="flex-1 rounded-full gap-2">
+                  <Download className="h-4 w-4" /> Exportar
+                </Button>
+                <Button onClick={importBackup} variant="outline" className="flex-1 rounded-full gap-2">
+                  <Upload className="h-4 w-4" /> Restaurar
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">O backup inclui todos os clientes, agendamentos, produtos, orçamentos, colaboradores e configurações.</p>
+            </div>
+          </>
+        )}
       </div>
     </PageShell>
   );
