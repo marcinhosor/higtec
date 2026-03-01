@@ -1,12 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import PageShell from "@/components/PageShell";
 import { db, getLowStockProducts, getPendingMaintenanceEquipment, Quote } from "@/lib/storage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Users, Wrench, Package, AlertTriangle, Crown, Clock, Star, FileText, CheckCircle, XCircle, HelpCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Users, Wrench, Package, AlertTriangle, Crown, Clock, Star, FileText, CheckCircle, XCircle, HelpCircle, Fuel } from "lucide-react";
 import ProUpgradeModal from "@/components/ProUpgradeModal";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -18,9 +20,30 @@ function formatCurrency(v: number) {
 
 export default function StrategicDashboardPage() {
   const { planTier } = useCompanyPlan();
+  const { user } = useAuth();
   const isPremium = planTier === "premium" || planTier === "pro";
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear().toString());
+
+  // Vehicle trips data from cloud
+  const [tripData, setTripData] = useState<{ totalEstCost: number; totalActCost: number; totalTrips: number; deviations: number }>({ totalEstCost: 0, totalActCost: 0, totalTrips: 0, deviations: 0 });
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      const { data: profile } = await supabase.from("profiles").select("company_id").eq("user_id", user.id).maybeSingle();
+      if (!profile?.company_id) return;
+      const { data: trips } = await supabase.from("vehicle_trips").select("estimated_cost, actual_cost, route_deviation, status, created_at").eq("company_id", profile.company_id);
+      if (!trips) return;
+      const yearTrips = trips.filter(t => new Date(t.created_at).getFullYear() === parseInt(selectedYear));
+      setTripData({
+        totalEstCost: yearTrips.reduce((s, t) => s + ((t as any).estimated_cost || 0), 0),
+        totalActCost: yearTrips.reduce((s, t) => s + ((t as any).actual_cost || 0), 0),
+        totalTrips: yearTrips.length,
+        deviations: yearTrips.filter(t => (t as any).route_deviation).length,
+      });
+    };
+    load();
+  }, [user, selectedYear]);
 
   const clients = useMemo(() => db.getClients(), []);
   const appointments = useMemo(() => db.getAppointments(), []);
@@ -348,6 +371,25 @@ export default function StrategicDashboardPage() {
         {/* Quote Conversion Report */}
         <QuoteConversionSection quotes={quotes} year={year} />
 
+        {/* Vehicle Displacement Costs */}
+        {tripData.totalTrips > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Fuel className="h-4 w-4 text-primary" /> Custos de Deslocamento
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <SummaryRow label="Total Viagens" value={String(tripData.totalTrips)} />
+                <SummaryRow label="Desvios de Rota" value={String(tripData.deviations)} highlight={tripData.deviations > 0} />
+                <SummaryRow label="Custo Estimado" value={formatCurrency(tripData.totalEstCost)} />
+                <SummaryRow label="Custo Real" value={formatCurrency(tripData.totalActCost)} highlight />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Summary */}
         <Card>
           <CardHeader className="pb-2">
@@ -355,8 +397,10 @@ export default function StrategicDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <SummaryRow label="Custo Total" value={formatCurrency(totalCost)} />
-              <SummaryRow label="Lucro Bruto" value={formatCurrency(totalRevenue - totalCost)} highlight />
+              <SummaryRow label="Custo Operacional" value={formatCurrency(totalCost)} />
+              <SummaryRow label="Custo Deslocamento" value={formatCurrency(tripData.totalActCost)} />
+              <SummaryRow label="Custo Total" value={formatCurrency(totalCost + tripData.totalActCost)} />
+              <SummaryRow label="Lucro Bruto" value={formatCurrency(totalRevenue - totalCost - tripData.totalActCost)} highlight />
               <SummaryRow label="Total Serviços" value={String(totalServices)} />
               <SummaryRow label="Média/Mês" value={(totalServices / 12).toFixed(1)} />
             </div>

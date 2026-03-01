@@ -23,6 +23,7 @@ import StrategicDashboardPage from "./pages/StrategicDashboardPage";
 import EquipmentPage from "./pages/EquipmentPage";
 import AdminPanelPage from "./pages/AdminPanelPage";
 import MarketplacePage from "./pages/MarketplacePage";
+import VehicleTripsPage from "./pages/VehicleTripsPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -63,6 +64,7 @@ const App = () => (
                 <Route path="/painel-admin" element={<ProtectedRoute><AdminPanelPage /></ProtectedRoute>} />
                 <Route path="/equipamentos" element={<ProtectedRoute><EquipmentPage /></ProtectedRoute>} />
                 <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
+                <Route path="/deslocamentos" element={<ProtectedRoute><VehicleTripsPage /></ProtectedRoute>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </AuthProvider>

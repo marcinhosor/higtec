@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil, Key, Copy, Shield } from "lucide-react";
+import { Download, Upload, Building2, Save, Crown, ImagePlus, CreditCard, Star, Trash2, Plus, Users, UserCheck, UserX, Wrench, ArrowUp, ArrowDown, Pencil, Key, Copy, Shield, Car } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import ThemeSelector from "@/components/ThemeSelector";
@@ -63,6 +63,12 @@ export default function SettingsPage() {
   const [accessCode, setAccessCode] = useState("");
   const [loadingTechs, setLoadingTechs] = useState(false);
 
+  // Vehicle management state
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [vehicleOpen, setVehicleOpen] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<any | null>(null);
+  const [vehicleForm, setVehicleForm] = useState({ model: "", plate: "", fuel_type: "gasolina", avg_consumption_km_l: 10, fuel_price_per_liter: 6.0, collaborator_id: "", notes: "" });
+
   // Load company data from cloud
   const loadCloudData = useCallback(async (cId: string) => {
     // Load company
@@ -106,6 +112,10 @@ export default function SettingsPage() {
     // Load technicians
     const { data: techs } = await supabase.from("technicians").select("*").eq("company_id", cId).order("created_at");
     if (techs) setTechnicians(techs);
+
+    // Load vehicles
+    const { data: vehs } = await supabase.from("vehicles").select("*").eq("company_id", cId).order("created_at");
+    if (vehs) setVehicles(vehs);
 
     setLoading(false);
   }, [dbIsPro, dbPlanTier]);
@@ -335,6 +345,40 @@ export default function SettingsPage() {
   const copyAccessCode = () => {
     navigator.clipboard.writeText(accessCode);
     toast.success("Código copiado!");
+  };
+
+  // ---- Vehicles (Cloud - Premium) ----
+  const saveVehicle = async () => {
+    if (!vehicleForm.model.trim()) { toast.error("Modelo é obrigatório"); return; }
+    if (!companyId) return;
+    if (editingVehicle) {
+      const { error } = await supabase.from("vehicles").update({
+        model: vehicleForm.model, plate: vehicleForm.plate, fuel_type: vehicleForm.fuel_type,
+        avg_consumption_km_l: vehicleForm.avg_consumption_km_l, fuel_price_per_liter: vehicleForm.fuel_price_per_liter,
+        collaborator_id: vehicleForm.collaborator_id || null, notes: vehicleForm.notes,
+      } as any).eq("id", editingVehicle.id);
+      if (error) { toast.error("Erro ao atualizar veículo"); return; }
+      setVehicles(prev => prev.map(v => v.id === editingVehicle.id ? { ...v, ...vehicleForm, collaborator_id: vehicleForm.collaborator_id || null } : v));
+      toast.success("Veículo atualizado!");
+    } else {
+      const { data, error } = await supabase.from("vehicles").insert({
+        company_id: companyId, model: vehicleForm.model, plate: vehicleForm.plate, fuel_type: vehicleForm.fuel_type,
+        avg_consumption_km_l: vehicleForm.avg_consumption_km_l, fuel_price_per_liter: vehicleForm.fuel_price_per_liter,
+        collaborator_id: vehicleForm.collaborator_id || null, notes: vehicleForm.notes,
+      } as any).select().single();
+      if (error) { toast.error("Erro ao cadastrar veículo"); return; }
+      setVehicles(prev => [...prev, data]);
+      toast.success("Veículo cadastrado!");
+    }
+    setVehicleOpen(false);
+    setEditingVehicle(null);
+    setVehicleForm({ model: "", plate: "", fuel_type: "gasolina", avg_consumption_km_l: 10, fuel_price_per_liter: 6.0, collaborator_id: "", notes: "" });
+  };
+
+  const removeVehicle = async (id: string) => {
+    await supabase.from("vehicles").delete().eq("id", id);
+    setVehicles(prev => prev.filter(v => v.id !== id));
+    toast.success("Veículo removido");
   };
 
   const exportBackup = () => {
@@ -767,6 +811,93 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        {/* Vehicles (Premium) */}
+        {dbPlanTier === 'premium' && (
+          <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in border border-primary/20">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                  <Car className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-foreground">Veículos</h2>
+                  <p className="text-xs text-muted-foreground">Controle de frota e consumo</p>
+                </div>
+              </div>
+              <Dialog open={vehicleOpen} onOpenChange={o => { setVehicleOpen(o); if (!o) { setEditingVehicle(null); setVehicleForm({ model: "", plate: "", fuel_type: "gasolina", avg_consumption_km_l: 10, fuel_price_per_liter: 6.0, collaborator_id: "", notes: "" }); } }}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="rounded-full gap-1"><Plus className="h-4 w-4" /> Novo</Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md mx-4 max-h-[85vh] overflow-y-auto">
+                  <DialogHeader><DialogTitle>{editingVehicle ? "Editar Veículo" : "Novo Veículo"}</DialogTitle></DialogHeader>
+                  <div className="space-y-3">
+                    <div><Label>Modelo *</Label><Input value={vehicleForm.model} onChange={e => setVehicleForm({...vehicleForm, model: e.target.value})} placeholder="Ex: Fiat Strada 2020" /></div>
+                    <div><Label>Placa</Label><Input value={vehicleForm.plate} onChange={e => setVehicleForm({...vehicleForm, plate: e.target.value.toUpperCase()})} placeholder="ABC-1234" /></div>
+                    <div>
+                      <Label>Combustível</Label>
+                      <Select value={vehicleForm.fuel_type} onValueChange={v => setVehicleForm({...vehicleForm, fuel_type: v})}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gasolina">Gasolina</SelectItem>
+                          <SelectItem value="etanol">Etanol</SelectItem>
+                          <SelectItem value="diesel">Diesel</SelectItem>
+                          <SelectItem value="flex">Flex</SelectItem>
+                          <SelectItem value="gnv">GNV</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><Label>Consumo (km/l)</Label><Input type="number" min={0} step={0.1} value={vehicleForm.avg_consumption_km_l || ""} onChange={e => setVehicleForm({...vehicleForm, avg_consumption_km_l: parseFloat(e.target.value) || 0})} /></div>
+                      <div><Label>Preço/litro (R$)</Label><Input type="number" min={0} step={0.01} value={vehicleForm.fuel_price_per_liter || ""} onChange={e => setVehicleForm({...vehicleForm, fuel_price_per_liter: parseFloat(e.target.value) || 0})} /></div>
+                    </div>
+                    <div>
+                      <Label>Colaborador vinculado</Label>
+                      <Select value={vehicleForm.collaborator_id} onValueChange={v => setVehicleForm({...vehicleForm, collaborator_id: v})}>
+                        <SelectTrigger><SelectValue placeholder="Nenhum" /></SelectTrigger>
+                        <SelectContent>
+                          {collaborators.filter(c => c.status === 'ativo').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div><Label>Observações</Label><Input value={vehicleForm.notes} onChange={e => setVehicleForm({...vehicleForm, notes: e.target.value})} placeholder="Notas sobre o veículo" /></div>
+                    <Button onClick={saveVehicle} className="w-full rounded-full">{editingVehicle ? "Atualizar" : "Cadastrar"}</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {vehicles.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Nenhum veículo cadastrado</p>
+            ) : (
+              <div className="space-y-2">
+                {vehicles.map(v => (
+                  <div key={v.id} className="rounded-lg border p-3 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-foreground text-sm">{v.model} <span className="text-muted-foreground font-mono">{v.plate}</span></p>
+                      <p className="text-xs text-muted-foreground">
+                        ⛽ {v.fuel_type} • {v.avg_consumption_km_l} km/l • R$ {(v.fuel_price_per_liter || 0).toFixed(2)}/l
+                        {v.collaborator_id && ` • 👤 ${collaborators.find(c => c.id === v.collaborator_id)?.name || "—"}`}
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
+                        setVehicleForm({ model: v.model, plate: v.plate, fuel_type: v.fuel_type, avg_consumption_km_l: v.avg_consumption_km_l, fuel_price_per_liter: v.fuel_price_per_liter, collaborator_id: v.collaborator_id || "", notes: v.notes || "" });
+                        setEditingVehicle(v);
+                        setVehicleOpen(true);
+                      }}>
+                        <Pencil className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeVehicle(v.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Backup */}
         <div className="rounded-xl bg-card p-5 shadow-card animate-fade-in">
