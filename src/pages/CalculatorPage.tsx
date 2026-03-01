@@ -43,14 +43,18 @@ export default function CalculatorPage() {
     const pPart = parseFloat(dilutionPart);
     const wPart = parseFloat(waterPart);
     const vol = parseFloat(volume);
-    if (!isNaN(pPart) && !isNaN(wPart) && !isNaN(vol) && pPart > 0 && wPart > 0 && vol > 0) {
-      const totalParts = pPart + wPart;
-      const productMl = Math.round((pPart / totalParts) * vol * 1000 * 100) / 100;
-      const waterMl = Math.round((wPart / totalParts) * vol * 1000 * 100) / 100;
-      setResult({ product: productMl, water: waterMl });
-    } else {
+
+    if (!dilutionPart || !waterPart || !volume || isNaN(pPart) || isNaN(wPart) || isNaN(vol) || pPart <= 0 || wPart <= 0 || vol <= 0) {
+      toast.error("Preencha todos os campos com valores maiores que zero");
       setResult(null);
+      return;
     }
+
+    const totalParts = pPart + wPart;
+    const productMl = Math.round((pPart / totalParts) * vol * 1000 * 100) / 100;
+    const waterMl = Math.round((wPart / totalParts) * vol * 1000 * 100) / 100;
+    setResult({ product: productMl, water: waterMl });
+    toast.success("Cálculo realizado!");
   };
 
   const handleDeductStock = async () => {
@@ -163,7 +167,7 @@ export default function CalculatorPage() {
         </div>
 
         {result !== null && (
-          <div className="rounded-xl gradient-primary p-6 shadow-card animate-scale-in space-y-4">
+          <div className="rounded-xl bg-primary p-6 shadow-card space-y-4">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
               <div>
                 <p className="text-xs text-primary-foreground/70 font-medium uppercase tracking-wide">Produto</p>
