@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import PageShell from "@/components/PageShell";
 import { db, Quote, QuoteServiceItem, ServiceType, Client, Appointment, Collaborator, BRAZILIAN_STATES, generateId } from "@/lib/storage";
 import { Plus, Trash2, FileText, Send, CalendarPlus, Eye, Check, X, Clock, Ruler, User, Edit } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -25,8 +27,9 @@ const isAreaBasedService = (name: string) => {
 };
 
 export default function QuotesPage() {
+  const { user } = useAuth();
   const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [clients, setClients] = useState<Client[]>(() => db.getClients());
+  const [clients, setClients] = useState<Client[]>([]);
   const [serviceTypes] = useState(() => db.getServiceTypes().filter(st => st.isActive).sort((a, b) => a.order - b.order));
   const { isPro } = useCompanyPlan();
   const [company] = useState(() => db.getCompany());
@@ -58,6 +61,35 @@ export default function QuotesPage() {
     discountType: "percent" as Quote["discountType"],
     discountValue: 0,
   });
+
+  // Load clients from cloud
+  useEffect(() => {
+    if (!user) return;
+    const loadClients = async () => {
+      const { data: profile } = await supabase.rpc('get_user_company_id', { _user_id: user.id });
+      if (!profile) return;
+      const { data } = await supabase.from('clients').select('*').eq('company_id', profile).order('name');
+      if (data) {
+        setClients(data.map(c => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone || '',
+          address: c.address || '',
+          street: c.street || '',
+          number: c.number || '',
+          complement: c.complement || '',
+          neighborhood: c.neighborhood || '',
+          city: c.city || '',
+          state: c.state || '',
+          propertyType: c.property_type || '',
+          observations: c.observations || '',
+          serviceHistory: (Array.isArray(c.service_history) ? c.service_history : []) as any,
+          createdAt: c.created_at,
+        })));
+      }
+    };
+    loadClients();
+  }, [user]);
 
   useEffect(() => { setQuotes(db.getQuotes()); }, []);
 
