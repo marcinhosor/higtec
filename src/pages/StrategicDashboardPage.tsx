@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import PageShell from "@/components/PageShell";
-import { db, getLowStockProducts, getPendingMaintenanceEquipment } from "@/lib/storage";
+import { db, getLowStockProducts, getPendingMaintenanceEquipment, Quote } from "@/lib/storage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Users, Wrench, Package, AlertTriangle, Crown, Clock, Star } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Users, Wrench, Package, AlertTriangle, Crown, Clock, Star, FileText, CheckCircle, XCircle, HelpCircle } from "lucide-react";
 import ProUpgradeModal from "@/components/ProUpgradeModal";
 import { useCompanyPlan } from "@/hooks/use-company-plan";
+import { Badge } from "@/components/ui/badge";
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const CHART_COLORS = ["hsl(207 90% 54%)", "hsl(152 60% 46%)", "hsl(38 92% 50%)", "hsl(0 84% 60%)", "hsl(270 60% 55%)", "hsl(180 60% 45%)"];
@@ -344,6 +345,9 @@ export default function StrategicDashboardPage() {
           </Card>
         )}
 
+        {/* Quote Conversion Report */}
+        <QuoteConversionSection quotes={quotes} year={year} />
+
         {/* Summary */}
         <Card>
           <CardHeader className="pb-2">
@@ -393,5 +397,141 @@ function SummaryRow({ label, value, highlight }: { label: string; value: string;
       <span className="text-muted-foreground text-xs">{label}</span>
       <span className={`font-semibold text-sm ${highlight ? 'text-primary' : 'text-foreground'}`}>{value}</span>
     </div>
+  );
+}
+
+function QuoteConversionSection({ quotes, year }: { quotes: Quote[]; year: number }) {
+  const [filter, setFilter] = useState<'all' | 'aprovado' | 'recusado' | 'pendente' | 'nao_respondeu'>('all');
+
+  const yearQuotes = useMemo(() => 
+    quotes.filter(q => q.date && new Date(q.date + "T00:00").getFullYear() === year),
+    [quotes, year]
+  );
+
+  const approved = yearQuotes.filter(q => q.status === 'aprovado');
+  const rejected = yearQuotes.filter(q => q.status === 'recusado');
+  const pending = yearQuotes.filter(q => q.status === 'pendente');
+  const noResponse = yearQuotes.filter(q => q.status === 'nao_respondeu');
+  const conversionRate = yearQuotes.length > 0 ? (approved.length / yearQuotes.length) * 100 : 0;
+
+  const totalApproved = approved.reduce((sum, q) => {
+    const sub = q.services.reduce((s, sv) => s + sv.quantity * sv.unitPrice, 0);
+    const disc = q.discountType === 'percent' ? sub * q.discountValue / 100 : q.discountValue;
+    return sum + Math.max(0, sub - disc);
+  }, 0);
+
+  const totalLost = rejected.reduce((sum, q) => {
+    const sub = q.services.reduce((s, sv) => s + sv.quantity * sv.unitPrice, 0);
+    const disc = q.discountType === 'percent' ? sub * q.discountValue / 100 : q.discountValue;
+    return sum + Math.max(0, sub - disc);
+  }, 0);
+
+  const filteredQuotes = filter === 'all' ? yearQuotes :
+    yearQuotes.filter(q => q.status === filter);
+
+  const statusIcon = (status: string) => {
+    switch (status) {
+      case 'aprovado': return <CheckCircle className="h-3.5 w-3.5 text-success" />;
+      case 'recusado': return <XCircle className="h-3.5 w-3.5 text-destructive" />;
+      case 'nao_respondeu': return <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />;
+      default: return <Clock className="h-3.5 w-3.5 text-warning" />;
+    }
+  };
+
+  const statusLabel: Record<string, string> = {
+    aprovado: 'Aprovado',
+    recusado: 'Recusado',
+    pendente: 'Pendente',
+    nao_respondeu: 'Não respondeu',
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" /> Conversão de Orçamentos
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* KPIs */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-lg bg-success/10 border border-success/20 p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">Aprovados</p>
+            <p className="text-lg font-bold text-success">{approved.length}</p>
+            <p className="text-[10px] text-success">{formatCurrency(totalApproved)}</p>
+          </div>
+          <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">Recusados</p>
+            <p className="text-lg font-bold text-destructive">{rejected.length}</p>
+            <p className="text-[10px] text-destructive">{formatCurrency(totalLost)}</p>
+          </div>
+          <div className="rounded-lg bg-warning/10 border border-warning/20 p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">Pendentes</p>
+            <p className="text-lg font-bold text-warning">{pending.length}</p>
+          </div>
+          <div className="rounded-lg bg-muted border p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">Sem resposta</p>
+            <p className="text-lg font-bold text-muted-foreground">{noResponse.length}</p>
+          </div>
+        </div>
+
+        {/* Conversion rate */}
+        <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 flex items-center justify-between">
+          <span className="text-xs font-medium text-foreground">Taxa de Conversão</span>
+          <span className={`text-lg font-bold ${conversionRate >= 50 ? 'text-success' : conversionRate >= 25 ? 'text-warning' : 'text-destructive'}`}>
+            {conversionRate.toFixed(1)}%
+          </span>
+        </div>
+
+        {/* Filter */}
+        <div className="flex gap-1 flex-wrap">
+          {(['all', 'aprovado', 'recusado', 'pendente', 'nao_respondeu'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`rounded-full px-2.5 py-1 text-[10px] font-medium border transition-colors ${
+                filter === f ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:bg-accent'
+              }`}
+            >
+              {f === 'all' ? `Todos (${yearQuotes.length})` :
+               f === 'aprovado' ? `✅ Aprovados (${approved.length})` :
+               f === 'recusado' ? `❌ Recusados (${rejected.length})` :
+               f === 'pendente' ? `⏳ Pendentes (${pending.length})` :
+               `❓ Sem resposta (${noResponse.length})`}
+            </button>
+          ))}
+        </div>
+
+        {/* Client list */}
+        <div className="space-y-1.5 max-h-60 overflow-y-auto">
+          {filteredQuotes.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-3">Nenhum orçamento neste filtro</p>
+          ) : (
+            filteredQuotes.map(q => {
+              const sub = q.services.reduce((s, sv) => s + sv.quantity * sv.unitPrice, 0);
+              const disc = q.discountType === 'percent' ? sub * q.discountValue / 100 : q.discountValue;
+              const total = Math.max(0, sub - disc);
+              return (
+                <div key={q.id} className="flex items-center gap-2 rounded-lg border p-2.5 text-xs">
+                  {statusIcon(q.status)}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground truncate">{q.clientName}</p>
+                    <p className="text-muted-foreground">{String(q.number).padStart(2, '0')}/{q.date ? new Date(q.date + "T00:00").getFullYear() : ''} • {q.services.map(s => s.name).join(', ')}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-semibold text-foreground">{formatCurrency(total)}</p>
+                    <p className={`text-[10px] ${
+                      q.status === 'aprovado' ? 'text-success' :
+                      q.status === 'recusado' ? 'text-destructive' :
+                      'text-muted-foreground'
+                    }`}>{statusLabel[q.status]}</p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
