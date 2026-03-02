@@ -66,7 +66,12 @@ export function useDeviceGuard(): DeviceGuardResult {
   const deviceName = getDeviceName();
 
   const checkAndRegister = useCallback(async () => {
-    if (!user || !companyId || planLoading) return;
+    if (!user || !companyId) {
+      setAllowed(true);
+      setLoading(false);
+      return;
+    }
+    if (planLoading) return;
 
     // Master admin (dev account) bypasses device limits
     try {
